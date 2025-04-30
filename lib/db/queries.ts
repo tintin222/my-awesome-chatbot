@@ -26,6 +26,7 @@ import {
   vote,
   type DBMessage,
   type Chat,
+  globalContext,
 } from './schema';
 import type { ArtifactKind } from '@/components/artifact';
 import { generateUUID } from '../utils';
@@ -78,10 +79,12 @@ export async function saveChat({
   id,
   userId,
   title,
+  systemPrompt,
 }: {
   id: string;
   userId: string;
   title: string;
+  systemPrompt?: string | null;
 }) {
   try {
     return await db.insert(chat).values({
@@ -89,6 +92,7 @@ export async function saveChat({
       createdAt: new Date(),
       userId,
       title,
+      systemPrompt,
     });
   } catch (error) {
     console.error('Failed to save chat in database');
@@ -467,6 +471,33 @@ export async function getMessageCountByUserId({
     console.error(
       'Failed to get message count by user id for the last 24 hours from database',
     );
+    throw error;
+  }
+}
+
+// ---- Global Context Queries ----
+
+export async function getAllGlobalContext() {
+  try {
+    return await db
+      .select()
+      .from(globalContext)
+      .orderBy(asc(globalContext.category), asc(globalContext.createdAt));
+  } catch (error) {
+    console.error('Failed to get all global context from database');
+    throw error;
+  }
+}
+
+export async function getGlobalContextById({ id }: { id: string }) {
+  try {
+    const [item] = await db
+      .select()
+      .from(globalContext)
+      .where(eq(globalContext.id, id));
+    return item;
+  } catch (error) {
+    console.error('Failed to get global context by id from database');
     throw error;
   }
 }

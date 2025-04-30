@@ -28,6 +28,7 @@ export default async function Page() {
           initialMessages={[]}
           selectedChatModel={DEFAULT_CHAT_MODEL}
           selectedVisibilityType="private"
+          initialSystemPrompt=""
           isReadonly={false}
           session={session}
         />
@@ -44,6 +45,7 @@ export default async function Page() {
         initialMessages={[]}
         selectedChatModel={modelIdFromCookie.value}
         selectedVisibilityType="private"
+        initialSystemPrompt=""
         isReadonly={false}
         session={session}
       />

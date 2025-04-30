@@ -23,6 +23,7 @@ export function Chat({
   initialMessages,
   selectedChatModel,
   selectedVisibilityType,
+  initialSystemPrompt,
   isReadonly,
   session,
 }: {
@@ -30,10 +31,13 @@ export function Chat({
   initialMessages: Array<UIMessage>;
   selectedChatModel: string;
   selectedVisibilityType: VisibilityType;
+  initialSystemPrompt: string;
   isReadonly: boolean;
   session: Session;
 }) {
   const { mutate } = useSWRConfig();
+
+  const [systemPrompt, setSystemPrompt] = useState(initialSystemPrompt);
 
   const {
     messages,
@@ -99,6 +103,8 @@ export function Chat({
           chatId={id}
           selectedModelId={selectedChatModel}
           selectedVisibilityType={selectedVisibilityType}
+          systemPrompt={systemPrompt}
+          setSystemPrompt={setSystemPrompt}
           isReadonly={isReadonly}
           session={session}
         />

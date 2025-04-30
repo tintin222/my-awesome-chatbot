@@ -14,6 +14,7 @@ import {
   getMessagesByChatId,
   saveChat,
   saveMessages,
+  getAllGlobalContext,
 } from '@/lib/db/queries';
 import { generateUUID, getTrailingMessageId } from '@/lib/utils';
 import { generateTitleFromUserMessage } from '../../actions';
@@ -64,16 +65,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const chat = await getChatById({ id });
+    const currentChat = await getChatById({ id });
 
-    if (!chat) {
+    if (!currentChat) {
       const title = await generateTitleFromUserMessage({
         message,
       });
 
       await saveChat({ id, userId: session.user.id, title });
     } else {
-      if (chat.userId !== session.user.id) {
+      if (currentChat.userId !== session.user.id) {
         return new Response('Forbidden', { status: 403 });
       }
     }
@@ -108,33 +109,39 @@ export async function POST(request: Request) {
       ],
     });
 
+    // Fetch global context
+    const allGlobalContext = await getAllGlobalContext();
+    let formattedGlobalContext = '';
+    if (allGlobalContext && allGlobalContext.length > 0) {
+      formattedGlobalContext = '\n\n--- Global Context ---\n';
+      const grouped = allGlobalContext.reduce(
+        (acc, item) => {
+          acc[item.category] = acc[item.category] || [];
+          acc[item.category].push(item.content);
+          return acc;
+        },
+        {} as Record<string, string[]>,
+      );
+
+      for (const category in grouped) {
+        formattedGlobalContext += `\n### ${category}\n`;
+        formattedGlobalContext += grouped[category].join('\n---\n'); // Join multiple entries in the same category
+        formattedGlobalContext += '\n';
+      }
+      formattedGlobalContext += '\n----------------------\n';
+    }
+
+    // Fetch per-chat behavior prompt
+    const chatBehaviorPrompt = currentChat?.systemPrompt || '';
+
     return createDataStreamResponse({
       execute: (dataStream) => {
-        const result = streamText({
+        const streamOptions: Parameters<typeof streamText>[0] = {
           model: myProvider.languageModel(selectedChatModel),
-          system: systemPrompt({ selectedChatModel, requestHints }),
           messages,
           maxSteps: 5,
-          experimental_activeTools:
-            selectedChatModel === 'chat-model-reasoning'
-              ? []
-              : [
-                  'getWeather',
-                  'createDocument',
-                  'updateDocument',
-                  'requestSuggestions',
-                ],
           experimental_transform: smoothStream({ chunking: 'word' }),
           experimental_generateMessageId: generateUUID,
-          tools: {
-            getWeather,
-            createDocument: createDocument({ session, dataStream }),
-            updateDocument: updateDocument({ session, dataStream }),
-            requestSuggestions: requestSuggestions({
-              session,
-              dataStream,
-            }),
-          },
           onFinish: async ({ response }) => {
             if (session.user?.id) {
               try {
@@ -175,7 +182,43 @@ export async function POST(request: Request) {
             isEnabled: isProductionEnvironment,
             functionId: 'stream-text',
           },
-        });
+        };
+
+        // Construct the final system prompt
+        const finalSystemPrompt =
+          `${formattedGlobalContext}${chatBehaviorPrompt}`.trim();
+
+        if (finalSystemPrompt) {
+          // If there's any system prompt (global or chat-specific)
+          streamOptions.system = finalSystemPrompt;
+          // Omit tools/activeTools as per previous logic when custom system info is present
+        } else {
+          // Default behavior: no custom system info, use default prompt & tools
+          streamOptions.system = systemPrompt({
+            selectedChatModel,
+            requestHints,
+          });
+          streamOptions.experimental_activeTools =
+            selectedChatModel === 'chat-model-reasoning'
+              ? []
+              : [
+                  'getWeather',
+                  'createDocument',
+                  'updateDocument',
+                  'requestSuggestions',
+                ];
+          streamOptions.tools = {
+            getWeather,
+            createDocument: createDocument({ session, dataStream }),
+            updateDocument: updateDocument({ session, dataStream }),
+            requestSuggestions: requestSuggestions({
+              session,
+              dataStream,
+            }),
+          };
+        }
+
+        const result = streamText(streamOptions);
 
         result.consumeStream();
 

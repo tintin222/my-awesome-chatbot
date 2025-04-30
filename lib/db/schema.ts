@@ -29,6 +29,7 @@ export const chat = pgTable('Chat', {
   visibility: varchar('visibility', { enum: ['public', 'private'] })
     .notNull()
     .default('private'),
+  systemPrompt: text('systemPrompt'),
 });
 
 export type Chat = InferSelectModel<typeof chat>;
@@ -150,3 +151,14 @@ export const suggestion = pgTable(
 );
 
 export type Suggestion = InferSelectModel<typeof suggestion>;
+
+// New table for global context
+export const globalContext = pgTable('GlobalContext', {
+  id: uuid('id').primaryKey().notNull().defaultRandom(),
+  category: text('category').notNull(),
+  content: text('content').notNull(),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+});
+
+export type GlobalContext = InferSelectModel<typeof globalContext>;

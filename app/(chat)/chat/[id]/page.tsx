@@ -62,6 +62,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
           initialMessages={convertToUIMessages(messagesFromDb)}
           selectedChatModel={DEFAULT_CHAT_MODEL}
           selectedVisibilityType={chat.visibility}
+          initialSystemPrompt={chat.systemPrompt || ''}
           isReadonly={session?.user?.id !== chat.userId}
           session={session}
         />
@@ -77,6 +78,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
         initialMessages={convertToUIMessages(messagesFromDb)}
         selectedChatModel={chatModelFromCookie.value}
         selectedVisibilityType={chat.visibility}
+        initialSystemPrompt={chat.systemPrompt || ''}
         isReadonly={session?.user?.id !== chat.userId}
         session={session}
       />
