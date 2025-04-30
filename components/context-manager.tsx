@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { GlobalContext } from '@/lib/db/schema'; // Import the type
+import type { GlobalContext } from '@/lib/db/schema'; // Use 'import type'
 import { Button } from '@/components/ui/button';
 import { PlusIcon, PenIcon, TrashIcon } from './icons'; // Changed EditIcon to PenIcon
 import {
