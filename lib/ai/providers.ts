@@ -35,7 +35,7 @@ export const myProvider = isTestEnvironment
           model: xai('grok-3-mini-beta'),
           middleware: extractReasoningMiddleware({ tagName: 'think' }),
         }),
-        'title-model': xai('grok-2-1212'),
+        'title-model': google('models/gemini-2.5-flash-preview-04-17'),
         'artifact-model': xai('grok-2-1212'),
       },
       imageModels: {
