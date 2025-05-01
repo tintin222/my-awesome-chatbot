@@ -214,7 +214,7 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
                     {item.content}
                   </p>
                 </div>
-                <div className="flex gap-2 flex-shrink-0 ml-4">
+                <div className="flex gap-2 shrink-0 ml-4">
                   {/* Edit Button */}
                   <Button
                     variant="outline"
