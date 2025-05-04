@@ -482,9 +482,23 @@ export async function getAllGlobalContext() {
     return await db
       .select()
       .from(globalContext)
-      .orderBy(asc(globalContext.category), asc(globalContext.createdAt));
+      .orderBy(desc(globalContext.createdAt));
   } catch (error) {
-    console.error('Failed to get all global context from database');
+    console.error('Failed to get all global context items from database');
+    throw error;
+  }
+}
+
+// New function to get only active items
+export async function getAllActiveGlobalContext() {
+  try {
+    return await db
+      .select()
+      .from(globalContext)
+      .where(eq(globalContext.isActive, true))
+      .orderBy(desc(globalContext.createdAt));
+  } catch (error) {
+    console.error('Failed to get active global context items from database');
     throw error;
   }
 }

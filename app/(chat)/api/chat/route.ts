@@ -20,6 +20,7 @@ import {
   saveChat,
   saveMessages,
   getAllGlobalContext,
+  getAllActiveGlobalContext,
 } from '@/lib/db/queries';
 import { generateUUID, getTrailingMessageId } from '@/lib/utils';
 import { generateTitleFromUserMessage } from '../../actions';
@@ -32,6 +33,24 @@ import { myProvider } from '@/lib/ai/providers';
 import { entitlementsByUserType } from '@/lib/ai/entitlements';
 import { postRequestBodySchema, type PostRequestBody } from './schema';
 import { geolocation } from '@vercel/functions';
+import { eq, and } from 'drizzle-orm';
+import { globalContext, chat, type GlobalContext } from '@/lib/db/schema';
+
+// Define the core persona and restrictions (Corrected Syntax)
+const PERSONA_PROMPT = `You are a helpful and polite hotel assistant representing Gloria Hotels & Resorts. Your primary goal is to answer guest questions accurately using *only* the information provided in the context below.
+
+**Response Guidelines:**
+*   Address the guest directly and politely.
+*   Answer concisely and focus on the specific question asked.
+*   **Crucially: NEVER mention the context, documents, knowledge base, or how you obtained the information.** Simply provide the answer as if it's known hotel information.
+*   **Avoid phrases like:** "Based on the document...", "According to the information I have...", "The context states...", "In the provided text...".
+*   If the information needed to answer the question is NOT present in the provided context, politely state that you do not have that specific detail and, if appropriate, suggest contacting the hotel directly.
+*   Do not invent information or answer questions outside the scope of the provided context.
+*   Maintain a friendly and professional tone.
+
+---
+Provided Context & Instructions:
+`; // Separator added
 
 export const maxDuration = 60;
 
@@ -155,147 +174,198 @@ export async function POST(request: Request) {
       return new Response('Failed to save message', { status: 500 });
     }
 
-    const allGlobalContext = await getAllGlobalContext();
-    const activeGlobalContext = allGlobalContext.filter(
-      (item) => item.isActive,
-    );
-    let formattedGlobalContext = '';
-    if (activeGlobalContext && activeGlobalContext.length > 0) {
-      formattedGlobalContext = '\n\n--- Global Context ---\n';
-      const grouped = activeGlobalContext.reduce(
-        (acc, item) => {
-          acc[item.category] = acc[item.category] || [];
-          acc[item.category].push(item.content);
-          return acc;
-        },
-        {} as Record<string, string[]>,
-      );
+    // --- Start: Fetch and Process Context ---
 
-      for (const category in grouped) {
-        formattedGlobalContext += `\n### ${category}\n`;
-        formattedGlobalContext += grouped[category].join('\n---\n');
-        formattedGlobalContext += '\n';
-      }
-      formattedGlobalContext += '\n----------------------\n';
+    // 1. Fetch Chat-specific Behavior Prompt
+    let chatBehaviorPrompt = '';
+    if (savedChat && savedChat.systemPrompt) {
+      chatBehaviorPrompt = savedChat.systemPrompt;
+      console.log('[POST /api/chat] Fetched chat-specific behavior prompt.');
     }
 
-    const chatBehaviorPrompt = savedChat?.systemPrompt || '';
+    // 2. Fetch All Active Global Context Items (including associatedHotels)
+    const allActiveContextItems = await getAllActiveGlobalContext();
     console.log(
-      `[POST /api/chat] Per-chat behavior prompt length: ${chatBehaviorPrompt.length}`,
+      `[POST /api/chat] Fetched ${allActiveContextItems.length} active global context items.`,
     );
 
+    // 3. Keyword Detection for Target Hotel
+    let targetHotel: string | null = null;
+    const lastUserMessage = messages[messages.length - 1]?.content;
+    if (typeof lastUserMessage === 'string') {
+      const lowerCaseMessage = lastUserMessage.toLowerCase();
+      if (lowerCaseMessage.includes('serenity')) {
+        targetHotel = 'serenity';
+      } else if (lowerCaseMessage.includes('golf')) {
+        targetHotel = 'golf';
+      } else if (lowerCaseMessage.includes('verde')) {
+        targetHotel = 'verde';
+      }
+      if (targetHotel) {
+        console.log(`[POST /api/chat] Detected target hotel: ${targetHotel}`);
+      }
+    }
+
+    // 4. Filter Context Items - Prioritize target hotel if detected
+    let filteredContextItems: GlobalContext[] = [];
+    if (targetHotel) {
+      // If a hotel is detected, ONLY get context specifically for that hotel
+      console.log(
+        `[POST /api/chat] Filtering for context specific to: ${targetHotel}`,
+      );
+      filteredContextItems = allActiveContextItems.filter((item) =>
+        item.associatedHotels?.includes(targetHotel),
+      );
+      // Optional: Add back 'all' context if NO specific context was found?
+      // if (filteredContextItems.length === 0) {
+      //    console.log(`[API Chat] No specific context for ${targetHotel}, falling back to 'all'.`);
+      //    filteredContextItems = allActiveContextItems.filter(item => item.associatedHotels?.includes('all'));
+      // }
+    } else {
+      // If no hotel detected, get only the 'all' context
+      console.log(
+        "[POST /api/chat] No target hotel detected, filtering for 'all' context.",
+      );
+      filteredContextItems = allActiveContextItems.filter((item) =>
+        item.associatedHotels?.includes('all'),
+      );
+    }
+
+    console.log(
+      `[POST /api/chat] Filtered down to ${filteredContextItems.length} relevant context items.`,
+    );
+
+    // 5. Format Context String (Group by category, add hotel specifier)
+    let formattedContext = '';
+    // No longer need separate general/specific grouping, format all filtered items
+    const groupedContext: Record<string, string[]> = {};
+
+    filteredContextItems.forEach((item) => {
+      if (!groupedContext[item.category]) {
+        groupedContext[item.category] = [];
+      }
+      groupedContext[item.category].push(item.content);
+    });
+
+    // Add appropriate header based on whether a target hotel was used for filtering
+    if (targetHotel && Object.keys(groupedContext).length > 0) {
+      const hotelName =
+        targetHotel.charAt(0).toUpperCase() + targetHotel.slice(1);
+      formattedContext += `Context Specifically for Gloria ${hotelName}:\n`;
+    } else if (Object.keys(groupedContext).length > 0) {
+      // Only add general header if no specific hotel context was targeted
+      formattedContext += `General Context (Applies to All Hotels):\n`;
+    }
+
+    // Append the grouped content
+    for (const category in groupedContext) {
+      formattedContext += `\n## ${category}\n`;
+      groupedContext[category].forEach((content) => {
+        formattedContext += `${content}\n`; // Add newline after each item
+      });
+    }
+
+    if (formattedContext.trim() !== '') {
+      console.log('[POST /api/chat] Formatted context string prepared.');
+    } else {
+      console.log(
+        '[POST /api/chat] No relevant global context found or formatted.',
+      );
+    }
+
+    // --- End: Fetch and Process Context ---
+
+    // --- Combine Prompts and Call AI ---
+
+    // 6. Combine persona, global context, and chat-specific behavior prompt
+    let finalSystemPrompt = PERSONA_PROMPT; // Start with the persona prompt
+
+    if (formattedContext.trim() !== '') {
+      // Append formatted context if it exists
+      finalSystemPrompt += formattedContext.trim() + '\n\n---\n\n'; // Separator
+    } else {
+      // If no formatted context, add a note for clarity (Corrected Syntax)
+      finalSystemPrompt += `(No specific global context relevant to this query was found or provided.)\n\n---\n\n`;
+    }
+
+    if (chatBehaviorPrompt.trim() !== '') {
+      // Append per-chat instructions if they exist
+      finalSystemPrompt += `Chat Behavior Instructions (Follow these in addition to the main persona):\n${chatBehaviorPrompt.trim()}`;
+    }
+
+    // Determine if tools should be used (only if NO custom system info AND no behavior prompt is provided)
+    const useTools =
+      finalSystemPrompt.trim() === PERSONA_PROMPT.split('---')[0].trim(); // Check if only the base persona exists
+
+    // Select the model from cookies or default
+    const model = myProvider.languageModel(selectedChatModel);
+
+    console.log(
+      `[POST /api/chat] Calling AI. Use Tools: ${useTools}. System Prompt length: ${finalSystemPrompt.length}`,
+    );
+    // Add logging for the full prompt
+    console.log('--- BEGIN FINAL SYSTEM PROMPT ---');
+    console.log(finalSystemPrompt);
+    console.log('--- END FINAL SYSTEM PROMPT ---');
+
+    // Call streamText FIRST to get the result object
+    const result = await streamText({
+      model,
+      messages,
+      maxSteps: 5,
+      experimental_transform: smoothStream({ chunking: 'word' }),
+      experimental_generateMessageId: generateUUID,
+      system: finalSystemPrompt.trim() || undefined,
+      experimental_toolCallStreaming: useTools,
+      onFinish: async ({ response }) => {
+        if (session.user?.id) {
+          try {
+            const assistantId = getTrailingMessageId({
+              messages: response.messages.filter(
+                (message) => message.role === 'assistant',
+              ),
+            });
+
+            if (!assistantId) {
+              throw new Error('No assistant message found!');
+            }
+
+            const [, assistantMessage] = appendResponseMessages({
+              messages: [message], // Use the single user message here
+              responseMessages: response.messages,
+            });
+
+            await saveMessages({
+              messages: [
+                {
+                  id: assistantId,
+                  chatId: id,
+                  role: assistantMessage.role,
+                  parts: assistantMessage.parts,
+                  attachments: assistantMessage.experimental_attachments ?? [],
+                  createdAt: new Date(),
+                },
+              ],
+            });
+          } catch (_) {
+            console.error('Failed to save chat');
+          }
+        }
+      },
+      experimental_telemetry: {
+        isEnabled: isProductionEnvironment,
+        functionId: 'stream-text',
+      },
+    });
+
+    // Now, create the response stream and merge the result INSIDE the execute callback
     return createDataStreamResponse({
       execute: (dataStream) => {
-        console.log(`[POST /api/chat] Execute stream for chat ${id}`);
-        try {
-          const streamOptions: Parameters<typeof streamText>[0] = {
-            model: myProvider.languageModel(selectedChatModel),
-            messages,
-            maxSteps: 5,
-            experimental_transform: smoothStream({ chunking: 'word' }),
-            experimental_generateMessageId: generateUUID,
-            onFinish: async ({ response }) => {
-              if (session.user?.id) {
-                try {
-                  const assistantId = getTrailingMessageId({
-                    messages: response.messages.filter(
-                      (message) => message.role === 'assistant',
-                    ),
-                  });
-
-                  if (!assistantId) {
-                    throw new Error('No assistant message found!');
-                  }
-
-                  const [, assistantMessage] = appendResponseMessages({
-                    messages: [message],
-                    responseMessages: response.messages,
-                  });
-
-                  await saveMessages({
-                    messages: [
-                      {
-                        id: assistantId,
-                        chatId: id,
-                        role: assistantMessage.role,
-                        parts: assistantMessage.parts,
-                        attachments:
-                          assistantMessage.experimental_attachments ?? [],
-                        createdAt: new Date(),
-                      },
-                    ],
-                  });
-                } catch (_) {
-                  console.error('Failed to save chat');
-                }
-              }
-            },
-            experimental_telemetry: {
-              isEnabled: isProductionEnvironment,
-              functionId: 'stream-text',
-            },
-          };
-
-          const finalSystemPrompt =
-            `${formattedGlobalContext}${chatBehaviorPrompt}`.trim();
-          let useTools = false;
-
-          if (finalSystemPrompt) {
-            streamOptions.system = finalSystemPrompt;
-            console.log(
-              `[POST /api/chat] Using combined system prompt (length: ${finalSystemPrompt.length}), tools disabled.`,
-            );
-          } else {
-            useTools = true;
-            streamOptions.system = systemPrompt({
-              selectedChatModel,
-              requestHints,
-            });
-            streamOptions.experimental_activeTools =
-              selectedChatModel === 'chat-model-reasoning'
-                ? []
-                : [
-                    'getWeather',
-                    'createDocument',
-                    'updateDocument',
-                    'requestSuggestions',
-                  ];
-            streamOptions.tools = {
-              getWeather,
-              createDocument: createDocument({ session, dataStream }),
-              updateDocument: updateDocument({ session, dataStream }),
-              requestSuggestions: requestSuggestions({
-                session,
-                dataStream,
-              }),
-            };
-            console.log(
-              `[POST /api/chat] Using default system prompt, tools enabled.`,
-            );
-          }
-
-          console.log('[POST /api/chat] Calling streamText with options:', {
-            model: streamOptions.model,
-            systemLength: streamOptions.system?.length,
-            toolsEnabled: useTools,
-          });
-          const result = streamText(streamOptions);
-          console.log(
-            `[POST /api/chat] streamText call initiated for chat ${id}`,
-          );
-
-          result.consumeStream();
-          result.mergeIntoDataStream(dataStream, { sendReasoning: true });
-          console.log(
-            `[POST /api/chat] Stream merging initiated for chat ${id}`,
-          );
-        } catch (streamError) {
-          console.error(
-            `[POST /api/chat] Error during stream execution for chat ${id}:`,
-            streamError,
-          );
-          throw streamError;
-        }
+        console.log(
+          `[POST /api/chat] Merging stream into DataStream for chat ${id}`,
+        );
+        // Merge the result into the dataStream provided by the callback
+        result.mergeIntoDataStream(dataStream, { sendReasoning: true });
       },
       onError: (error) => {
         console.error(

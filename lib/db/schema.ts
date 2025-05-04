@@ -1,14 +1,15 @@
 import type { InferSelectModel } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
+  boolean,
   pgTable,
-  varchar,
-  timestamp,
-  json,
-  uuid,
   text,
+  timestamp,
+  varchar,
+  uuid,
   primaryKey,
   foreignKey,
-  boolean,
+  json,
 } from 'drizzle-orm/pg-core';
 
 export const user = pgTable('User', {
@@ -153,13 +154,17 @@ export const suggestion = pgTable(
 export type Suggestion = InferSelectModel<typeof suggestion>;
 
 // New table for global context
-export const globalContext = pgTable('GlobalContext', {
-  id: uuid('id').primaryKey().notNull().defaultRandom(),
+export const globalContext = pgTable('global_context', {
+  id: varchar('id', { length: 191 }).primaryKey(),
   category: text('category').notNull(),
   content: text('content').notNull(),
-  isActive: boolean('isActive').notNull().default(true),
-  createdAt: timestamp('createdAt').notNull().defaultNow(),
-  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+  associatedHotels: text('associated_hotels')
+    .array()
+    .default(sql`'{}'::text[]`)
+    .notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow(),
 });
 
 export type GlobalContext = InferSelectModel<typeof globalContext>;

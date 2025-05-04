@@ -64,6 +64,13 @@
       "when": 1746344455305,
       "tag": "0008_organic_golden_guardian",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1746349687219,
+      "tag": "0009_heavy_wilson_fisk",
+      "breakpoints": true
     }
   ]
 }
