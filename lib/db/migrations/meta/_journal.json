@@ -57,6 +57,13 @@
       "when": 1746015006840,
       "tag": "0007_thick_overlord",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1746344455305,
+      "tag": "0008_organic_golden_guardian",
+      "breakpoints": true
     }
   ]
 }

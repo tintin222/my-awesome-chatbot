@@ -157,6 +157,7 @@ export const globalContext = pgTable('GlobalContext', {
   id: uuid('id').primaryKey().notNull().defaultRandom(),
   category: text('category').notNull(),
   content: text('content').notNull(),
+  isActive: boolean('isActive').notNull().default(true),
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 });

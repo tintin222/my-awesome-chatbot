@@ -156,13 +156,13 @@ export async function POST(request: Request) {
     }
 
     const allGlobalContext = await getAllGlobalContext();
-    console.log(
-      `[POST /api/chat] Fetched ${allGlobalContext?.length || 0} global context items.`,
+    const activeGlobalContext = allGlobalContext.filter(
+      (item) => item.isActive,
     );
     let formattedGlobalContext = '';
-    if (allGlobalContext && allGlobalContext.length > 0) {
+    if (activeGlobalContext && activeGlobalContext.length > 0) {
       formattedGlobalContext = '\n\n--- Global Context ---\n';
-      const grouped = allGlobalContext.reduce(
+      const grouped = activeGlobalContext.reduce(
         (acc, item) => {
           acc[item.category] = acc[item.category] || [];
           acc[item.category].push(item.content);

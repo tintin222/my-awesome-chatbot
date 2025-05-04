@@ -87,12 +87,14 @@ export async function updateChatVisibility({
 export async function createGlobalContext({
   category,
   content,
+  isActive = true,
 }: {
   category: string;
   content: string;
+  isActive?: boolean;
 }) {
   try {
-    await db.insert(globalContext).values({ category, content });
+    await db.insert(globalContext).values({ category, content, isActive });
     // Consider revalidating cache/path if using a dedicated management page
   } catch (error) {
     console.error('Failed to create global context item');
@@ -104,19 +106,40 @@ export async function updateGlobalContext({
   id,
   category,
   content,
+  isActive,
 }: {
   id: string;
   category: string;
   content: string;
+  isActive: boolean;
 }) {
   try {
     await db
       .update(globalContext)
-      .set({ category, content, updatedAt: new Date() })
+      .set({ category, content, isActive, updatedAt: new Date() })
       .where(eq(globalContext.id, id));
     // Consider revalidating cache/path
   } catch (error) {
     console.error('Failed to update global context item');
+    throw error;
+  }
+}
+
+export async function toggleGlobalContextActive({
+  id,
+  isActive,
+}: {
+  id: string;
+  isActive: boolean;
+}) {
+  try {
+    await db
+      .update(globalContext)
+      .set({ isActive, updatedAt: new Date() })
+      .where(eq(globalContext.id, id));
+    // Consider revalidating cache/path
+  } catch (error) {
+    console.error('Failed to toggle global context active state');
     throw error;
   }
 }

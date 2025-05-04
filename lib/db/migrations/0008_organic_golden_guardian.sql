@@ -1,0 +1,1 @@
+ALTER TABLE "GlobalContext" ADD COLUMN "isActive" boolean DEFAULT true NOT NULL;

@@ -20,6 +20,7 @@ import {
   createGlobalContext,
   updateGlobalContext,
   deleteGlobalContext,
+  toggleGlobalContextActive,
 } from '@/app/(chat)/actions'; // Import server actions
 import { toast } from './toast';
 import {
@@ -34,6 +35,26 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { useRouter } from 'next/navigation'; // Import useRouter
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
+
+// Define categories
+const CONTEXT_CATEGORIES = [
+  'Restaurant Information/Menu',
+  'Events Information',
+  'Shuttle services',
+  'FaQ',
+  'General Catalog',
+  'Hotel services and service prices',
+  'Factsheet',
+];
 
 interface ContextManagerProps {
   initialItems: GlobalContext[];
@@ -54,6 +75,9 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
   // Add states for edit/delete dialogs later
   const [newCategory, setNewCategory] = useState('');
   const [newContent, setNewContent] = useState('');
+  const [newIsActive, setNewIsActive] = useState(true);
+  const [editIsActive, setEditIsActive] = useState(true);
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null); // State for expansion
   const router = useRouter(); // Get router instance
 
   // Handler for saving new context
@@ -67,17 +91,17 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
     }
     setIsSaving(true);
     try {
-      // We need to get the new item back or refetch to update the list
-      // For now, let's just call the action and manually update state (simplest)
-      // Ideally, use SWR mutation for better state handling
-      await createGlobalContext({ category: newCategory, content: newContent });
-      // Refetch or manually add to state - fetching is safer
-      // For simplicity now, we assume refetch/revalidation happens elsewhere or manually added later
+      await createGlobalContext({
+        category: newCategory,
+        content: newContent,
+        isActive: newIsActive,
+      });
       toast({ type: 'success', description: 'New context added.' });
       setNewCategory('');
       setNewContent('');
+      setNewIsActive(true);
       setIsAddDialogOpen(false);
-      router.refresh(); // Refresh data on success
+      router.refresh();
     } catch (error) {
       toast({ type: 'error', description: 'Failed to add context.' });
     } finally {
@@ -90,6 +114,7 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
     setEditingItem(item);
     setEditCategory(item.category);
     setEditContent(item.content);
+    setEditIsActive(item.isActive);
     setIsEditDialogOpen(true);
   };
 
@@ -107,15 +132,37 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
         id: editingItem.id,
         category: editCategory,
         content: editContent,
+        isActive: editIsActive,
       });
       toast({ type: 'success', description: 'Context updated.' });
       setIsEditDialogOpen(false);
       setEditingItem(null);
-      router.refresh(); // Refresh data on success
+      router.refresh();
     } catch (error) {
       toast({ type: 'error', description: 'Failed to update context.' });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Handler for toggling active state
+  const handleToggleActive = async (item: GlobalContext) => {
+    const originalItems = [...items];
+    setItems((currentItems) =>
+      currentItems.map((i) =>
+        i.id === item.id ? { ...i, isActive: !i.isActive } : i,
+      ),
+    );
+
+    try {
+      await toggleGlobalContextActive({
+        id: item.id,
+        isActive: !item.isActive,
+      });
+      router.refresh();
+    } catch (error) {
+      toast({ type: 'error', description: 'Failed to update status.' });
+      setItems(originalItems);
     }
   };
 
@@ -133,6 +180,11 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  // Toggle expansion handler
+  const handleToggleExpand = (itemId: string) => {
+    setExpandedItemId((currentId) => (currentId === itemId ? null : itemId));
   };
 
   return (
@@ -158,13 +210,18 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
                 <Label htmlFor="new-category" className="text-right">
                   Category
                 </Label>
-                <Input
-                  id="new-category"
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  className="col-span-3"
-                  placeholder="e.g., Menu, Shuttle, Events"
-                />
+                <Select value={newCategory} onValueChange={setNewCategory}>
+                  <SelectTrigger className="col-span-3">
+                    <SelectValue placeholder="Select a category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CONTEXT_CATEGORIES.map((cat) => (
+                      <SelectItem key={cat} value={cat}>
+                        {cat}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid grid-cols-4 items-start gap-4">
                 <Label htmlFor="new-content" className="text-right pt-2">
@@ -177,6 +234,26 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
                   className="col-span-3 h-40 resize-none"
                   placeholder="Enter the context information here..."
                 />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="new-isActive" className="text-right">
+                  Active
+                </Label>
+                <div className="col-span-3 flex items-center space-x-2">
+                  <Checkbox
+                    id="new-isActive"
+                    checked={newIsActive}
+                    onCheckedChange={(checked: boolean | 'indeterminate') =>
+                      setNewIsActive(Boolean(checked))
+                    }
+                  />
+                  <label
+                    htmlFor="new-isActive"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Include this context for the AI
+                  </label>
+                </div>
               </div>
             </div>
             <DialogFooter>
@@ -206,35 +283,62 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
             {items.map((item) => (
               <li
                 key={item.id}
-                className="border-b pb-2 flex justify-between items-start"
+                className="border-b pb-2 flex justify-between items-start gap-4"
               >
-                <div>
+                {/* Info Section - Made clickable */}
+                <div
+                  className="flex-1 min-w-0 cursor-pointer"
+                  onClick={() => handleToggleExpand(item.id)}
+                  role="button" // Accessibility
+                  tabIndex={0} // Accessibility
+                  onKeyDown={(e) => {
+                    // Accessibility for keyboard users
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      handleToggleExpand(item.id);
+                    }
+                  }}
+                >
                   <p className="font-semibold">{item.category}</p>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                    {item.content}
-                  </p>
+                  {/* Conditionally render content */}
+                  {expandedItemId === item.id && (
+                    <p className="mt-1 text-sm text-muted-foreground whitespace-pre-wrap break-words">
+                      {item.content}
+                    </p>
+                  )}
                 </div>
-                <div className="flex gap-2 shrink-0 ml-4">
-                  {/* Edit Button */}
+                <div className="flex items-center gap-2 shrink-0 ml-auto">
+                  <div className="flex flex-col items-center space-y-1">
+                    <Switch
+                      id={`active-switch-${item.id}`}
+                      checked={item.isActive}
+                      onCheckedChange={() => handleToggleActive(item)}
+                    />
+                    <Label
+                      htmlFor={`active-switch-${item.id}`}
+                      className="text-xs text-muted-foreground"
+                    >
+                      {item.isActive ? 'Active' : 'Inactive'}
+                    </Label>
+                  </div>
                   <Button
                     variant="outline"
-                    size="sm"
+                    size="icon"
                     onClick={() => openEditDialog(item)}
+                    className="h-8 w-8"
                   >
-                    <PenIcon size={16} />
+                    <PenIcon size={14} />
                   </Button>
-                  {/* Delete Button -> Triggers AlertDialog */}
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button
                         variant="destructive"
-                        size="sm"
+                        size="icon"
                         onClick={() => setDeletingItem(item)}
+                        className="h-8 w-8"
                       >
-                        <TrashIcon size={16} />
+                        <TrashIcon size={14} />
                       </Button>
                     </AlertDialogTrigger>
-                    {/* Conditionally render content only when deletingItem matches */}
                     {deletingItem?.id === item.id && (
                       <AlertDialogContent>
                         <AlertDialogHeader>
@@ -284,12 +388,18 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
               <Label htmlFor="edit-category" className="text-right">
                 Category
               </Label>
-              <Input
-                id="edit-category"
-                value={editCategory}
-                onChange={(e) => setEditCategory(e.target.value)}
-                className="col-span-3"
-              />
+              <Select value={editCategory} onValueChange={setEditCategory}>
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Select a category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CONTEXT_CATEGORIES.map((cat) => (
+                    <SelectItem key={cat} value={cat}>
+                      {cat}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid grid-cols-4 items-start gap-4">
               <Label htmlFor="edit-content" className="text-right pt-2">
@@ -301,6 +411,26 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
                 onChange={(e) => setEditContent(e.target.value)}
                 className="col-span-3 h-40 resize-none"
               />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="edit-isActive" className="text-right">
+                Active
+              </Label>
+              <div className="col-span-3 flex items-center space-x-2">
+                <Checkbox
+                  id="edit-isActive"
+                  checked={editIsActive}
+                  onCheckedChange={(checked: boolean | 'indeterminate') =>
+                    setEditIsActive(Boolean(checked))
+                  }
+                />
+                <label
+                  htmlFor="edit-isActive"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  Include this context for the AI
+                </label>
+              </div>
             </div>
           </div>
           <DialogFooter>
