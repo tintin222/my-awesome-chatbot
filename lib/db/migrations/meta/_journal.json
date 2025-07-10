@@ -71,6 +71,13 @@
       "when": 1746349687219,
       "tag": "0009_heavy_wilson_fisk",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1748528225349,
+      "tag": "0010_jittery_mandroid",
+      "breakpoints": true
     }
   ]
 }

@@ -48,6 +48,13 @@ const PERSONA_PROMPT = `You are a helpful and polite hotel assistant representin
 *   Do not invent information or answer questions outside the scope of the provided context.
 *   Maintain a friendly and professional tone.
 
+**Formatting Guidelines:**
+*   Structure your responses using markdown headers (## or ###) to organize different sections
+*   Use bullet points (- or *) for lists of items, features, or services
+*   When presenting pricing information, format it clearly with the item and price separated
+*   For schedules or timings, present them in a clear, structured format
+*   Keep related information grouped together under appropriate headers
+
 ---
 Provided Context & Instructions:
 `; // Separator added
@@ -103,7 +110,7 @@ export async function POST(request: Request) {
     }
 
     let isNewChat = false;
-    let chatCheck = await getChatById({ id });
+    const chatCheck = await getChatById({ id });
 
     if (!chatCheck) {
       isNewChat = true;
@@ -178,7 +185,7 @@ export async function POST(request: Request) {
 
     // 1. Fetch Chat-specific Behavior Prompt
     let chatBehaviorPrompt = '';
-    if (savedChat && savedChat.systemPrompt) {
+    if (savedChat?.systemPrompt) {
       chatBehaviorPrompt = savedChat.systemPrompt;
       console.log('[POST /api/chat] Fetched chat-specific behavior prompt.');
     }
@@ -282,7 +289,7 @@ export async function POST(request: Request) {
 
     if (formattedContext.trim() !== '') {
       // Append formatted context if it exists
-      finalSystemPrompt += formattedContext.trim() + '\n\n---\n\n'; // Separator
+      finalSystemPrompt += `${formattedContext.trim()}\n\n---\n\n`; // Separator
     } else {
       // If no formatted context, add a note for clarity (Corrected Syntax)
       finalSystemPrompt += `(No specific global context relevant to this query was found or provided.)\n\n---\n\n`;

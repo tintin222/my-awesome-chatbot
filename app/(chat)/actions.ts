@@ -9,14 +9,26 @@ import {
   getMessageById,
   updateChatVisiblityById,
   getGlobalContextById,
-} from '@/lib/db/queries';
-import type { VisibilityType } from '@/components/visibility-selector';
-import { myProvider } from '@/lib/ai/providers';
+  createEnhancedContent,
+  getAllEnhancedContent,
+  updateEnhancedContent,
+  deleteEnhancedContent,
+  createContentEntities,
+  updateContentEntity,
+  createEntityEnhancement,
+  updateEntityEnhancement,
+  deleteEntityEnhancement,
+  createMultimediaAttachment,
+  deleteMultimediaAttachment,
+  getFullEnhancedContentData,
+  getAllGlobalContext,
+} from '../../lib/db/queries';
+import type { VisibilityType } from '../../components/visibility-selector';
+import { myProvider } from '../../lib/ai/providers';
 import { eq } from 'drizzle-orm';
-import { chat, globalContext } from '@/lib/db/schema';
+import { chat, globalContext } from '../../lib/db/schema';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { streamText } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import cuid from 'cuid';
 
@@ -286,5 +298,380 @@ export async function refactorGlobalContext({
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
     };
+  }
+}
+
+// ---- Content Enhancement System Actions ----
+
+// AI-powered content analysis function
+export async function analyzeContentAndExtractEntities({
+  content,
+}: {
+  content: string;
+}) {
+  try {
+    console.log('[Analyze Content] Starting content analysis');
+
+    const analysisPrompt = `Analyze the following content and extract structured entities. Return ONLY a valid JSON array of entities with the following structure for each entity (no markdown formatting, no code blocks, just pure JSON):
+
+{
+  "type": "restaurant|service|location|product|facility|event|policy|contact|pricing|amenity",
+  "name": "Entity name",
+  "description": "Brief description of the entity",
+  "originalText": "The exact text span from the original content",
+  "startPosition": number,
+  "endPosition": number,
+  "confidence": number (0.0 to 1.0),
+  "metadata": {
+    // Additional structured data specific to the entity type
+    // For restaurants: cuisine, location, capacity, etc.
+    // For services: hours, pricing, contact, etc.
+    // For facilities: location, capacity, amenities, etc.
+  }
+}
+
+Focus on extracting:
+- Restaurant and dining entities with details like cuisine, location, hours
+- Hotel services and amenities
+- Facilities and their features
+- Contact information and policies
+- Pricing and booking information
+- Events and activities
+- Location and geographic information
+
+Be precise with startPosition and endPosition (character indices in the original text).
+Only extract entities that have clear, useful information.
+Assign confidence scores based on how clearly defined and useful the entity is.
+
+IMPORTANT: Return ONLY the JSON array, no explanations, no markdown, no code blocks.
+
+Content to analyze:
+---
+${content}`;
+
+    const { text: analysisResult } = await generateText({
+      model: myProvider.languageModel('gemini-2.5-pro-preview'),
+      prompt: analysisPrompt,
+    });
+
+    console.log('[Analyze Content] Received analysis result');
+
+    // Clean the response to handle markdown code blocks
+    let cleanedResult = analysisResult.trim();
+
+    // Remove markdown code blocks if present
+    if (cleanedResult.startsWith('```json')) {
+      cleanedResult = cleanedResult
+        .replace(/^```json\s*/, '')
+        .replace(/\s*```$/, '');
+    } else if (cleanedResult.startsWith('```')) {
+      cleanedResult = cleanedResult
+        .replace(/^```\s*/, '')
+        .replace(/\s*```$/, '');
+    }
+
+    console.log(
+      '[Analyze Content] Cleaned result length:',
+      cleanedResult.length,
+    );
+
+    // Parse the JSON response
+    let entities: any[];
+    try {
+      entities = JSON.parse(cleanedResult);
+    } catch (parseError) {
+      console.error('[Analyze Content] Failed to parse JSON:', parseError);
+      console.error('[Analyze Content] Raw result:', analysisResult);
+      console.error('[Analyze Content] Cleaned result:', cleanedResult);
+      throw new Error('Failed to parse AI analysis result');
+    }
+
+    if (!Array.isArray(entities)) {
+      throw new Error('AI analysis did not return a valid array of entities');
+    }
+
+    console.log(`[Analyze Content] Extracted ${entities.length} entities`);
+    return { entities, success: true };
+  } catch (error) {
+    console.error('[Analyze Content] Failed:', error);
+    return {
+      entities: [],
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+// Create enhanced content from global context
+export async function createEnhancedContentFromContext({
+  originalContentId,
+}: {
+  originalContentId: string;
+}) {
+  try {
+    console.log(
+      `[Create Enhanced] Starting for context ID: ${originalContentId}`,
+    );
+
+    // Get the original global context
+    const originalContext = await getGlobalContextById({
+      id: originalContentId,
+    });
+    if (!originalContext) {
+      throw new Error('Original context not found');
+    }
+
+    // Create enhanced content record
+    const enhancedContent = await createEnhancedContent({
+      originalContentId,
+      title: `Enhanced: ${originalContext.category}`,
+      originalContent: originalContext.content,
+    });
+
+    console.log(
+      `[Create Enhanced] Created enhanced content: ${enhancedContent.id}`,
+    );
+
+    // Analyze content and extract entities
+    const analysisResult = await analyzeContentAndExtractEntities({
+      content: originalContext.content,
+    });
+
+    if (!analysisResult.success) {
+      throw new Error(`Content analysis failed: ${analysisResult.error}`);
+    }
+
+    // Create entity records
+    if (analysisResult.entities.length > 0) {
+      const entityRecords = analysisResult.entities.map(
+        (entity: {
+          type: string;
+          name: string;
+          description: string;
+          originalText: string;
+          startPosition: number;
+          endPosition: number;
+          confidence: number;
+          metadata: any;
+        }) => ({
+          enhancedContentId: enhancedContent.id,
+          type: entity.type,
+          name: entity.name,
+          description: entity.description,
+          originalText: entity.originalText,
+          startPosition: entity.startPosition,
+          endPosition: entity.endPosition,
+          confidence: String(entity.confidence), // Convert to string for decimal type
+          metadata: entity.metadata || {},
+        }),
+      );
+
+      await createContentEntities({ entities: entityRecords });
+      console.log(
+        `[Create Enhanced] Created ${entityRecords.length} entity records`,
+      );
+    }
+
+    return { success: true, enhancedContentId: enhancedContent.id };
+  } catch (error) {
+    console.error('[Create Enhanced] Failed:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+// Get all enhanced content items
+export async function getEnhancedContentList() {
+  try {
+    return await getAllEnhancedContent();
+  } catch (error) {
+    console.error('Failed to get enhanced content list');
+    throw error;
+  }
+}
+
+// Get full enhanced content data with entities
+export async function getEnhancedContentWithEntities({
+  enhancedContentId,
+}: {
+  enhancedContentId: string;
+}) {
+  try {
+    return await getFullEnhancedContentData({ enhancedContentId });
+  } catch (error) {
+    console.error('Failed to get enhanced content with entities');
+    throw error;
+  }
+}
+
+// Add enhancement to entity
+export async function addEntityEnhancement({
+  entityId,
+  enhancementType,
+  title,
+  content,
+}: {
+  entityId: string;
+  enhancementType: string;
+  title: string;
+  content: string;
+}) {
+  try {
+    return await createEntityEnhancement({
+      entityId,
+      enhancementType,
+      title,
+      content,
+    });
+  } catch (error) {
+    console.error('Failed to add entity enhancement');
+    throw error;
+  }
+}
+
+// Update entity enhancement
+export async function updateEntityEnhancementAction({
+  id,
+  title,
+  content,
+}: {
+  id: string;
+  title?: string;
+  content?: string;
+}) {
+  try {
+    return await updateEntityEnhancement({ id, title, content });
+  } catch (error) {
+    console.error('Failed to update entity enhancement');
+    throw error;
+  }
+}
+
+// Delete entity enhancement
+export async function deleteEntityEnhancementAction({ id }: { id: string }) {
+  try {
+    return await deleteEntityEnhancement({ id });
+  } catch (error) {
+    console.error('Failed to delete entity enhancement');
+    throw error;
+  }
+}
+
+// Update entity basic info
+export async function updateEntityAction({
+  id,
+  name,
+  description,
+  metadata,
+}: {
+  id: string;
+  name?: string;
+  description?: string;
+  metadata?: any;
+}) {
+  try {
+    return await updateContentEntity({ id, name, description, metadata });
+  } catch (error) {
+    console.error('Failed to update entity');
+    throw error;
+  }
+}
+
+// Add multimedia attachment to entity
+export async function addMultimediaToEntity({
+  entityId,
+  type,
+  filename,
+  originalFilename,
+  url,
+  size,
+  mimeType,
+  altText,
+  caption,
+}: {
+  entityId: string;
+  type: 'image' | 'video' | 'audio' | 'document';
+  filename: string;
+  originalFilename?: string;
+  url?: string;
+  size?: number;
+  mimeType?: string;
+  altText?: string;
+  caption?: string;
+}) {
+  try {
+    return await createMultimediaAttachment({
+      entityId,
+      type,
+      filename,
+      originalFilename,
+      url,
+      size,
+      mimeType,
+      altText,
+      caption,
+    });
+  } catch (error) {
+    console.error('Failed to add multimedia attachment');
+    throw error;
+  }
+}
+
+// Delete multimedia attachment
+export async function deleteMultimediaAttachmentAction({ id }: { id: string }) {
+  try {
+    return await deleteMultimediaAttachment({ id });
+  } catch (error) {
+    console.error('Failed to delete multimedia attachment');
+    throw error;
+  }
+}
+
+// Delete enhanced content
+export async function deleteEnhancedContentAction({ id }: { id: string }) {
+  try {
+    return await deleteEnhancedContent({ id });
+  } catch (error) {
+    console.error('Failed to delete enhanced content');
+    throw error;
+  }
+}
+
+// Update enhanced content status
+export async function updateEnhancedContentStatus({
+  id,
+  status,
+}: {
+  id: string;
+  status: 'draft' | 'reviewing' | 'published';
+}) {
+  try {
+    return await updateEnhancedContent({ id, status });
+  } catch (error) {
+    console.error('Failed to update enhanced content status');
+    throw error;
+  }
+}
+
+// Get available global context for content enhancement
+export async function getAvailableContextForEnhancement() {
+  try {
+    const allContext = await getAllGlobalContext();
+    const enhancedContent = await getAllEnhancedContent();
+
+    // Filter out context that already has enhanced content
+    const enhancedContentIds = new Set(
+      enhancedContent.map((ec) => ec.originalContentId),
+    );
+    const availableContext = allContext.filter(
+      (context) => !enhancedContentIds.has(context.id),
+    );
+
+    return availableContext;
+  } catch (error) {
+    console.error('Failed to get available context for enhancement');
+    throw error;
   }
 }

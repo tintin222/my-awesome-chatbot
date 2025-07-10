@@ -17,6 +17,7 @@ import { getChatHistoryPaginationKey } from './sidebar-history';
 import { toast } from './toast';
 import type { Session } from 'next-auth';
 import { useSearchParams } from 'next/navigation';
+import { SuggestionsPanel } from './suggestions-panel';
 
 export function Chat({
   id,
@@ -138,6 +139,8 @@ export function Chat({
           )}
         </form>
       </div>
+
+      {!isReadonly && <SuggestionsPanel chatId={id} append={append} />}
 
       <Artifact
         chatId={id}

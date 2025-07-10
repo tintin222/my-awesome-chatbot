@@ -27,6 +27,14 @@ import {
   type DBMessage,
   type Chat,
   globalContext,
+  enhancedContent,
+  contentEntity,
+  entityEnhancement,
+  multimediaAttachment,
+  type EnhancedContent,
+  type ContentEntity,
+  type EntityEnhancement,
+  type MultimediaAttachment,
 } from './schema';
 import type { ArtifactKind } from '@/components/artifact';
 import { generateUUID } from '../utils';
@@ -512,6 +520,514 @@ export async function getGlobalContextById({ id }: { id: string }) {
     return item;
   } catch (error) {
     console.error('Failed to get global context by id from database');
+    throw error;
+  }
+}
+
+export async function createGlobalContext({
+  id,
+  category,
+  content,
+  associatedHotels = ['all'],
+  isActive = true,
+}: {
+  id: string;
+  category: string;
+  content: string;
+  associatedHotels?: string[];
+  isActive?: boolean;
+}) {
+  try {
+    const [created] = await db
+      .insert(globalContext)
+      .values({
+        id,
+        category,
+        content,
+        associatedHotels,
+        isActive,
+      })
+      .returning();
+    return created;
+  } catch (error) {
+    console.error('Failed to create global context in database');
+    throw error;
+  }
+}
+
+export async function updateGlobalContext({
+  id,
+  category,
+  content,
+  associatedHotels,
+  isActive,
+}: {
+  id: string;
+  category?: string;
+  content?: string;
+  associatedHotels?: string[];
+  isActive?: boolean;
+}) {
+  try {
+    const updateData: any = { updatedAt: new Date() };
+    if (category !== undefined) updateData.category = category;
+    if (content !== undefined) updateData.content = content;
+    if (associatedHotels !== undefined)
+      updateData.associatedHotels = associatedHotels;
+    if (isActive !== undefined) updateData.isActive = isActive;
+
+    const [updated] = await db
+      .update(globalContext)
+      .set(updateData)
+      .where(eq(globalContext.id, id))
+      .returning();
+    return updated;
+  } catch (error) {
+    console.error('Failed to update global context in database');
+    throw error;
+  }
+}
+
+export async function deleteGlobalContext({ id }: { id: string }) {
+  try {
+    const [deleted] = await db
+      .delete(globalContext)
+      .where(eq(globalContext.id, id))
+      .returning();
+    return deleted;
+  } catch (error) {
+    console.error('Failed to delete global context from database');
+    throw error;
+  }
+}
+
+export async function toggleGlobalContextActive({
+  id,
+  isActive,
+}: {
+  id: string;
+  isActive: boolean;
+}) {
+  try {
+    const [updated] = await db
+      .update(globalContext)
+      .set({ isActive, updatedAt: new Date() })
+      .where(eq(globalContext.id, id))
+      .returning();
+    return updated;
+  } catch (error) {
+    console.error('Failed to toggle global context active state in database');
+    throw error;
+  }
+}
+
+// ---- Content Enhancement System Queries ----
+
+// Enhanced Content Queries
+export async function createEnhancedContent({
+  originalContentId,
+  title,
+  originalContent,
+}: {
+  originalContentId: string;
+  title: string;
+  originalContent: string;
+}) {
+  try {
+    const [created] = await db
+      .insert(enhancedContent)
+      .values({
+        originalContentId,
+        title,
+        originalContent,
+        status: 'draft',
+      })
+      .returning();
+    return created;
+  } catch (error) {
+    console.error('Failed to create enhanced content in database');
+    throw error;
+  }
+}
+
+export async function getAllEnhancedContent() {
+  try {
+    return await db
+      .select({
+        id: enhancedContent.id,
+        originalContentId: enhancedContent.originalContentId,
+        title: enhancedContent.title,
+        status: enhancedContent.status,
+        createdAt: enhancedContent.createdAt,
+        updatedAt: enhancedContent.updatedAt,
+        originalTitle: globalContext.category,
+      })
+      .from(enhancedContent)
+      .leftJoin(
+        globalContext,
+        eq(enhancedContent.originalContentId, globalContext.id),
+      )
+      .orderBy(desc(enhancedContent.updatedAt));
+  } catch (error) {
+    console.error('Failed to get all enhanced content from database');
+    throw error;
+  }
+}
+
+export async function getEnhancedContentById({ id }: { id: string }) {
+  try {
+    const [content] = await db
+      .select()
+      .from(enhancedContent)
+      .where(eq(enhancedContent.id, id));
+    return content;
+  } catch (error) {
+    console.error('Failed to get enhanced content by id from database');
+    throw error;
+  }
+}
+
+export async function updateEnhancedContent({
+  id,
+  enhancedContent: enhanced,
+  status,
+}: {
+  id: string;
+  enhancedContent?: string;
+  status?: 'draft' | 'reviewing' | 'published';
+}) {
+  try {
+    const updateData: any = { updatedAt: new Date() };
+    if (enhanced !== undefined) updateData.enhancedContent = enhanced;
+    if (status !== undefined) updateData.status = status;
+
+    const [updated] = await db
+      .update(enhancedContent)
+      .set(updateData)
+      .where(eq(enhancedContent.id, id))
+      .returning();
+    return updated;
+  } catch (error) {
+    console.error('Failed to update enhanced content in database');
+    throw error;
+  }
+}
+
+export async function deleteEnhancedContent({ id }: { id: string }) {
+  try {
+    const [deleted] = await db
+      .delete(enhancedContent)
+      .where(eq(enhancedContent.id, id))
+      .returning();
+    return deleted;
+  } catch (error) {
+    console.error('Failed to delete enhanced content from database');
+    throw error;
+  }
+}
+
+// Content Entity Queries
+export async function createContentEntities({
+  entities,
+}: {
+  entities: Array<Omit<ContentEntity, 'id' | 'createdAt' | 'updatedAt'>>;
+}) {
+  try {
+    return await db.insert(contentEntity).values(entities).returning();
+  } catch (error) {
+    console.error('Failed to create content entities in database');
+    throw error;
+  }
+}
+
+export async function getEntitiesByEnhancedContentId({
+  enhancedContentId,
+}: {
+  enhancedContentId: string;
+}) {
+  try {
+    return await db
+      .select()
+      .from(contentEntity)
+      .where(eq(contentEntity.enhancedContentId, enhancedContentId))
+      .orderBy(asc(contentEntity.startPosition));
+  } catch (error) {
+    console.error(
+      'Failed to get entities by enhanced content id from database',
+    );
+    throw error;
+  }
+}
+
+export async function getEntityById({ id }: { id: string }) {
+  try {
+    const [entity] = await db
+      .select()
+      .from(contentEntity)
+      .where(eq(contentEntity.id, id));
+    return entity;
+  } catch (error) {
+    console.error('Failed to get entity by id from database');
+    throw error;
+  }
+}
+
+export async function updateContentEntity({
+  id,
+  name,
+  description,
+  metadata,
+}: {
+  id: string;
+  name?: string;
+  description?: string;
+  metadata?: any;
+}) {
+  try {
+    const updateData: any = { updatedAt: new Date() };
+    if (name !== undefined) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    if (metadata !== undefined) updateData.metadata = metadata;
+
+    const [updated] = await db
+      .update(contentEntity)
+      .set(updateData)
+      .where(eq(contentEntity.id, id))
+      .returning();
+    return updated;
+  } catch (error) {
+    console.error('Failed to update content entity in database');
+    throw error;
+  }
+}
+
+// Entity Enhancement Queries
+export async function createEntityEnhancement({
+  entityId,
+  enhancementType,
+  title,
+  content,
+  sortOrder = 0,
+}: {
+  entityId: string;
+  enhancementType: string;
+  title: string;
+  content: string;
+  sortOrder?: number;
+}) {
+  try {
+    const [created] = await db
+      .insert(entityEnhancement)
+      .values({
+        entityId,
+        enhancementType,
+        title,
+        content,
+        sortOrder,
+      })
+      .returning();
+    return created;
+  } catch (error) {
+    console.error('Failed to create entity enhancement in database');
+    throw error;
+  }
+}
+
+export async function getEnhancementsByEntityId({
+  entityId,
+}: {
+  entityId: string;
+}) {
+  try {
+    return await db
+      .select()
+      .from(entityEnhancement)
+      .where(eq(entityEnhancement.entityId, entityId))
+      .orderBy(
+        asc(entityEnhancement.sortOrder),
+        asc(entityEnhancement.createdAt),
+      );
+  } catch (error) {
+    console.error('Failed to get enhancements by entity id from database');
+    throw error;
+  }
+}
+
+export async function updateEntityEnhancement({
+  id,
+  title,
+  content,
+  sortOrder,
+}: {
+  id: string;
+  title?: string;
+  content?: string;
+  sortOrder?: number;
+}) {
+  try {
+    const updateData: any = { updatedAt: new Date() };
+    if (title !== undefined) updateData.title = title;
+    if (content !== undefined) updateData.content = content;
+    if (sortOrder !== undefined) updateData.sortOrder = sortOrder;
+
+    const [updated] = await db
+      .update(entityEnhancement)
+      .set(updateData)
+      .where(eq(entityEnhancement.id, id))
+      .returning();
+    return updated;
+  } catch (error) {
+    console.error('Failed to update entity enhancement in database');
+    throw error;
+  }
+}
+
+export async function deleteEntityEnhancement({ id }: { id: string }) {
+  try {
+    const [deleted] = await db
+      .delete(entityEnhancement)
+      .where(eq(entityEnhancement.id, id))
+      .returning();
+    return deleted;
+  } catch (error) {
+    console.error('Failed to delete entity enhancement from database');
+    throw error;
+  }
+}
+
+// Multimedia Attachment Queries
+export async function createMultimediaAttachment({
+  entityId,
+  type,
+  filename,
+  originalFilename,
+  url,
+  size,
+  mimeType,
+  altText,
+  caption,
+  metadata = {},
+}: {
+  entityId: string;
+  type: 'image' | 'video' | 'audio' | 'document';
+  filename: string;
+  originalFilename?: string;
+  url?: string;
+  size?: number;
+  mimeType?: string;
+  altText?: string;
+  caption?: string;
+  metadata?: any;
+}) {
+  try {
+    const [created] = await db
+      .insert(multimediaAttachment)
+      .values({
+        entityId,
+        type,
+        filename,
+        originalFilename,
+        url,
+        size,
+        mimeType,
+        altText,
+        caption,
+        metadata,
+      })
+      .returning();
+    return created;
+  } catch (error) {
+    console.error('Failed to create multimedia attachment in database');
+    throw error;
+  }
+}
+
+export async function getAttachmentsByEntityId({
+  entityId,
+}: {
+  entityId: string;
+}) {
+  try {
+    return await db
+      .select()
+      .from(multimediaAttachment)
+      .where(eq(multimediaAttachment.entityId, entityId))
+      .orderBy(asc(multimediaAttachment.createdAt));
+  } catch (error) {
+    console.error('Failed to get attachments by entity id from database');
+    throw error;
+  }
+}
+
+export async function deleteMultimediaAttachment({ id }: { id: string }) {
+  try {
+    const [deleted] = await db
+      .delete(multimediaAttachment)
+      .where(eq(multimediaAttachment.id, id))
+      .returning();
+    return deleted;
+  } catch (error) {
+    console.error('Failed to delete multimedia attachment from database');
+    throw error;
+  }
+}
+
+// Combined queries for full entity data with enhancements and attachments
+export async function getFullEntityData({ entityId }: { entityId: string }) {
+  try {
+    const entity = await getEntityById({ id: entityId });
+    if (!entity) return null;
+
+    const enhancements = await getEnhancementsByEntityId({ entityId });
+    const attachments = await getAttachmentsByEntityId({ entityId });
+
+    return {
+      entity,
+      enhancements,
+      attachments,
+    };
+  } catch (error) {
+    console.error('Failed to get full entity data from database');
+    throw error;
+  }
+}
+
+export async function getFullEnhancedContentData({
+  enhancedContentId,
+}: {
+  enhancedContentId: string;
+}) {
+  try {
+    const content = await getEnhancedContentById({ id: enhancedContentId });
+    if (!content) return null;
+
+    const entities = await getEntitiesByEnhancedContentId({
+      enhancedContentId,
+    });
+
+    // Get enhancements and attachments for each entity
+    const entitiesWithData = await Promise.all(
+      entities.map(async (entity) => {
+        const enhancements = await getEnhancementsByEntityId({
+          entityId: entity.id,
+        });
+        const attachments = await getAttachmentsByEntityId({
+          entityId: entity.id,
+        });
+        return {
+          ...entity,
+          enhancements,
+          attachments,
+        };
+      }),
+    );
+
+    return {
+      content,
+      entities: entitiesWithData,
+    };
+  } catch (error) {
+    console.error('Failed to get full enhanced content data from database');
     throw error;
   }
 }
