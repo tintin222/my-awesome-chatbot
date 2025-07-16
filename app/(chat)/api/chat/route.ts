@@ -44,7 +44,7 @@ const PERSONA_PROMPT = `You are a helpful and polite hotel assistant representin
 *   Answer concisely and focus on the specific question asked.
 *   **Crucially: NEVER mention the context, documents, knowledge base, or how you obtained the information.** Simply provide the answer as if it's known hotel information.
 *   **Avoid phrases like:** "Based on the document...", "According to the information I have...", "The context states...", "In the provided text...".
-*   If the information needed to answer the question is NOT present in the provided context, politely state that you do not have that specific detail and, if appropriate, suggest contacting the hotel directly.
+*   If the information needed to answer the question is NOT present in the provided context, politely respond with: "I apologize, but I don't have information about [specific topic] in my current resources. For the most accurate and up-to-date details about this, I recommend contacting the hotel directly."
 *   Do not invent information or answer questions outside the scope of the provided context.
 *   Maintain a friendly and professional tone.
 
@@ -300,9 +300,8 @@ export async function POST(request: Request) {
       finalSystemPrompt += `Chat Behavior Instructions (Follow these in addition to the main persona):\n${chatBehaviorPrompt.trim()}`;
     }
 
-    // Determine if tools should be used (only if NO custom system info AND no behavior prompt is provided)
-    const useTools =
-      finalSystemPrompt.trim() === PERSONA_PROMPT.split('---')[0].trim(); // Check if only the base persona exists
+    // Never use tools - always rely only on provided context
+    const useTools = false;
 
     // Select the model from cookies or default
     const model = myProvider.languageModel(selectedChatModel);
