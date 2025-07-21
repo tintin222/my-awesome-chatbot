@@ -352,7 +352,7 @@ const postRequestBodySchema = z.object({
 });
 
 // Base persona prompt for Gloria Serenity Resort
-const PERSONA_PROMPT = `You are Oria, the AI assistant for Gloria Serenity Resort. You provide helpful, friendly, and accurate information about our hotel services, facilities, and local recommendations.
+const PERSONA_PROMPT = `You are Oria, the AI assistant. You provide helpful, friendly, and accurate information about our hotel services, facilities, and local recommendations.
 
 **Response Guidelines:**
 *   Address guests directly and politely.
@@ -746,7 +746,9 @@ export async function POST(request: Request) {
       
       try {
         const intentDetectionModel = myProvider.languageModel('gemini-1.5-flash');
-        const { text: intentResult } = await generateText({
+        const { text: intentResult } = await generateText(
+        
+        {
           model: intentDetectionModel,
           system: INTENT_DETECTION_PROMPT,
           messages: [{ role: 'user', content: message }],
@@ -999,42 +1001,97 @@ export async function POST(request: Request) {
     
     if (detectedResponseType && detectedResponseType !== 'text') {
       try {
-        // Clean the response - remove any markdown formatting and extra text
-        let cleanedText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        
+        let cleanedText = text.trim();
+        // Remove all code block markers at the start and end (even with extra newlines)
+        while (/^```(json)?\s*\n?/i.test(cleanedText)) {
+          cleanedText = cleanedText.replace(/^```(json)?\s*\n?/i, '').trim();
+        }
+        while (/```\s*$/i.test(cleanedText)) {
+          cleanedText = cleanedText.replace(/```\s*$/i, '').trim();
+        }
+        // Remove any remaining code block markers inside
+        cleanedText = cleanedText.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
         // Try to extract JSON from the response if it's wrapped in other text
         const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           cleanedText = jsonMatch[0];
         }
-        
-        console.log('[POST /api/mobile/chat] Attempting to parse JSON:', cleanedText);
-        
         parsedResponse = JSON.parse(cleanedText);
-        
-        // Validate that the parsed response has the correct type
         const validTypes = ['email', 'guest_request', 'activities', 'hotel_places', 'hotel_room', 'local_recommendation', 'reservation', 'shuttle', 'text'];
+        const RESPONSE_TYPE_TO_TYPE_FIELD = {
+          email: 'email',
+          guestRequest: 'guest_request',
+          activities: 'activities',
+          hotelPlaces: 'hotel_places',
+          hotelRoom: 'hotel_room',
+          localRecommendation: 'local_recommendation',
+          reservation: 'reservation',
+          shuttle: 'shuttle',
+          text: 'text',
+        };
+        const expectedType = RESPONSE_TYPE_TO_TYPE_FIELD[detectedResponseType];
+        // Validate that the parsed response has the correct type
+        if (parsedResponse.type !== expectedType) {
+          console.warn(`[POST /api/mobile/chat] Mismatched type in JSON response: expected ${expectedType}, got ${parsedResponse.type}. Forcing responseType to 'text' and creating fallback.`);
+          detectedResponseType = 'text';
+          parsedResponse = {
+            type: 'text',
+            content: typeof text === 'string' ? text : JSON.stringify(text)
+          };
+        }
+        // Ek kontrol: Sadece 'content' alanı varsa ve başka beklenen alanlar yoksa, yine text'e çevir
+        if (
+          parsedResponse.type === expectedType &&
+          Object.keys(parsedResponse).length === 2 &&
+          typeof parsedResponse.content === 'string'
+        ) {
+          console.warn(`[POST /api/mobile/chat] Only 'content' field present for type ${expectedType}. Forcing responseType to 'text' and creating fallback.`);
+          detectedResponseType = 'text';
+          parsedResponse = {
+            type: 'text',
+            content: parsedResponse.content
+          };
+        }
         if (parsedResponse.type && !validTypes.includes(parsedResponse.type)) {
           console.warn(`[POST /api/mobile/chat] Invalid type in JSON response: ${parsedResponse.type}, creating fallback`);
           parsedResponse = createFallbackResponse(detectedResponseType, text);
         }
-        
         isJsonResponse = true;
         console.log('[POST /api/mobile/chat] Successfully parsed JSON response');
       } catch (error) {
         console.warn('[POST /api/mobile/chat] Failed to parse JSON response:', error);
         console.warn('[POST /api/mobile/chat] Raw response was:', text);
-        
         // Create a fallback JSON response based on the detected type
         console.log('[POST /api/mobile/chat] Creating fallback JSON response for type:', detectedResponseType);
-        parsedResponse = createFallbackResponse(detectedResponseType, text);
+        // Fallback: content'e temizlenmiş düz metni koy
+        let fallbackContent = text.trim();
+        while (/^```(json)?\s*\n?/i.test(fallbackContent)) {
+          fallbackContent = fallbackContent.replace(/^```(json)?\s*\n?/i, '').trim();
+        }
+        while (/```\s*$/i.test(fallbackContent)) {
+          fallbackContent = fallbackContent.replace(/```\s*$/i, '').trim();
+        }
+        fallbackContent = fallbackContent.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
+        parsedResponse = {
+          type: 'text',
+          content: fallbackContent
+        };
+        detectedResponseType = 'text';
         isJsonResponse = true;
       }
     } else {
       // For text type, try to parse as JSON first, then fallback to simple text
       try {
-        // Clean the response - remove any markdown formatting and extra text
-        let cleanedText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        let cleanedText = text.trim();
+        // Remove all code block markers at the start and end (even with extra newlines)
+        while (/^```(json)?\s*\n?/i.test(cleanedText)) {
+          cleanedText = cleanedText.replace(/^```(json)?\s*\n?/i, '').trim();
+        }
+        while (/```\s*$/i.test(cleanedText)) {
+          cleanedText = cleanedText.replace(/```\s*$/i, '').trim();
+        }
+        // Remove any remaining code block markers inside
+        cleanedText = cleanedText.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
         
         // Try to extract JSON from the response if it's wrapped in other text
         const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
