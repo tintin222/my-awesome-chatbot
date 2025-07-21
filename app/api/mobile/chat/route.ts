@@ -323,6 +323,18 @@ function createFallbackResponse(responseType: string, originalText: string) {
   }
 }
 
+function cleanMarkdownBlocks(text: string): string {
+  let cleaned = text.trim();
+  while (/^```(json)?\s*\n?/i.test(cleaned)) {
+    cleaned = cleaned.replace(/^```(json)?\s*\n?/i, '').trim();
+  }
+  while (/```\s*$/i.test(cleaned)) {
+    cleaned = cleaned.replace(/```\s*$/i, '').trim();
+  }
+  cleaned = cleaned.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
+  return cleaned;
+}
+
 const postRequestBodySchema = z.object({
   chatId: z.string().uuid().describe('The UUID of the chat session. Generate a new one for each new conversation.'),
   userId: z.string().min(1).max(100).describe('The mobile app user ID (can be device ID, app-specific user ID, etc.)'),
@@ -1036,7 +1048,7 @@ export async function POST(request: Request) {
           detectedResponseType = 'text';
           parsedResponse = {
             type: 'text',
-            content: typeof text === 'string' ? text : JSON.stringify(text)
+            content: cleanMarkdownBlocks(text)
           };
         }
         // Ek kontrol: Sadece 'content' alanı varsa ve başka beklenen alanlar yoksa, yine text'e çevir
@@ -1049,7 +1061,7 @@ export async function POST(request: Request) {
           detectedResponseType = 'text';
           parsedResponse = {
             type: 'text',
-            content: parsedResponse.content
+            content: cleanMarkdownBlocks(parsedResponse.content)
           };
         }
         if (parsedResponse.type && !validTypes.includes(parsedResponse.type)) {
@@ -1074,7 +1086,7 @@ export async function POST(request: Request) {
         fallbackContent = fallbackContent.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
         parsedResponse = {
           type: 'text',
-          content: fallbackContent
+          content: cleanMarkdownBlocks(fallbackContent)
         };
         detectedResponseType = 'text';
         isJsonResponse = true;
@@ -1108,7 +1120,7 @@ export async function POST(request: Request) {
           console.warn(`[POST /api/mobile/chat] Invalid type in text response: ${parsedResponse.type}, creating fallback`);
           parsedResponse = {
             type: "text",
-            content: text
+            content: cleanMarkdownBlocks(text)
           };
         }
         
@@ -1121,7 +1133,7 @@ export async function POST(request: Request) {
         // Create a fallback JSON response for text type
         parsedResponse = {
           type: "text",
-          content: text
+          content: cleanMarkdownBlocks(text)
         };
         isJsonResponse = true;
         console.log('[POST /api/mobile/chat] Created fallback JSON response for text type');
