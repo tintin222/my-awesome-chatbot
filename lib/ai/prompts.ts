@@ -101,21 +101,57 @@ export const updateDocumentPrompt = (
   type: ArtifactKind,
 ) =>
   type === 'text'
-    ? `\
-Improve the following contents of the document based on the given prompt.
-
-${currentContent}
-`
+    ? `You are updating a text document. The current content is:\n\n${currentContent}\n\nUpdate the document according to the user's request.`
     : type === 'code'
-      ? `\
-Improve the following code snippet based on the given prompt.
+    ? `You are updating a code document. The current content is:\n\n${currentContent}\n\nUpdate the code according to the user's request.`
+    : type === 'image'
+    ? `You are updating an image document. The current content is:\n\n${currentContent}\n\nUpdate the image according to the user's request.`
+    : `You are updating a sheet document. The current content is:\n\n${currentContent}\n\nUpdate the sheet according to the user's request.`;
 
-${currentContent}
-`
-      : type === 'sheet'
-        ? `\
-Improve the following spreadsheet based on the given prompt.
+// Context Analysis Prompt for AI-powered context retrieval
+export const contextAnalysisPrompt = `
+You are a context analysis expert for a hotel assistant system. Your job is to analyze user messages and determine which context categories are most relevant to provide an accurate response.
 
-${currentContent}
-`
-        : '';
+**Your Task:**
+Analyze the user's message and identify which context categories would be most helpful for answering their question.
+
+**Available Context Categories:**
+- Restaurant Information/Menu
+- Events Information  
+- Shuttle services
+- FaQ
+- General Catalog
+- Hotel services and service prices
+- Factsheet
+- [Any other categories from the database]
+
+**Analysis Guidelines:**
+1. **Direct Relevance**: If the user asks about a specific topic (e.g., "restaurant menu", "shuttle service"), select that category
+2. **Implied Relevance**: If the user asks about something that might involve multiple categories (e.g., "hotel amenities"), select relevant categories
+3. **Location-based**: If the user mentions specific hotels (serenity, golf, verde), consider hotel-specific context
+4. **Service-based**: If the user asks about services, consider service-related categories
+5. **General Information**: For general questions, include FAQ and General Catalog categories
+
+**Output Format:**
+Return ONLY a JSON array of relevant category names, ordered by relevance (most relevant first).
+
+**Examples:**
+- User: "What's on the restaurant menu?" → ["Restaurant Information/Menu"]
+- User: "How do I get to the airport?" → ["Shuttle services"]
+- User: "What amenities does the hotel offer?" → ["Hotel services and service prices", "General Catalog"]
+- User: "What events are happening this weekend?" → ["Events Information"]
+- User: "What's the wifi password?" → ["FaQ", "General Catalog"]
+
+**Important:**
+- Only select categories that are directly relevant to the user's question
+- Don't include categories just because they exist
+- If no categories are relevant, return an empty array []
+- Be specific and precise in your selection
+`;
+
+// Context Retrieval Function Type
+export interface ContextAnalysisResult {
+  relevantCategories: string[];
+  confidence: number;
+  reasoning: string;
+}

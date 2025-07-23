@@ -4,11 +4,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useWindowSize } from 'usehooks-ts';
 import {
-  Dispatch,
-  SetStateAction,
+  type Dispatch,
+  type SetStateAction,
   memo,
   useState,
-  startTransition,
 } from 'react';
 
 import { ModelSelector } from '@/components/model-selector';

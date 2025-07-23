@@ -172,9 +172,9 @@ function PureFormattedMessage({ content }: FormattedMessageProps) {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {schedule.map((item, index) => (
+              {schedule.map((item) => (
                 <div
-                  key={index}
+                  key={item.day + item.hours}
                   className="flex justify-between items-center p-2 rounded-lg bg-muted/30"
                 >
                   <span className="font-medium">{item.day}</span>
@@ -198,22 +198,22 @@ function PureFormattedMessage({ content }: FormattedMessageProps) {
             gridTemplateColumns: `repeat(${Math.min(sections.length, 4)}, 1fr)`,
           }}
         >
-          {sections.slice(0, 4).map((section, index) => (
-            <TabsTrigger key={index} value={index.toString()}>
+          {sections.slice(0, 4).map((section) => (
+            <TabsTrigger key={section.title} value={section.title}>
               {section.title}
             </TabsTrigger>
           ))}
         </TabsList>
-        {sections.map((section, index) => (
-          <TabsContent key={index} value={index.toString()}>
+        {sections.map((section) => (
+          <TabsContent key={section.title} value={section.title}>
             <Card>
               <CardHeader>
                 <CardTitle>{section.title}</CardTitle>
               </CardHeader>
               <CardContent>
                 <ul className="space-y-2">
-                  {section.items.map((item, itemIndex) => (
-                    <li key={itemIndex} className="flex items-start">
+                  {section.items.map((item) => (
+                    <li key={item} className="flex items-start">
                       <span className="text-primary mr-2">•</span>
                       <span>{item}</span>
                     </li>
@@ -231,8 +231,8 @@ function PureFormattedMessage({ content }: FormattedMessageProps) {
   if (contentType === 'spa' && sections.length > 0) {
     return (
       <div className="space-y-4">
-        {sections.map((section, index) => (
-          <Card key={index}>
+        {sections.map((section) => (
+          <Card key={section.title}>
             <CardHeader>
               <CardTitle className="text-lg">{section.title}</CardTitle>
               {section.title.toLowerCase().includes('spa') && (
@@ -243,9 +243,9 @@ function PureFormattedMessage({ content }: FormattedMessageProps) {
             </CardHeader>
             <CardContent>
               <div className="grid gap-2">
-                {section.items.map((item, itemIndex) => (
+                {section.items.map((item) => (
                   <div
-                    key={itemIndex}
+                    key={item}
                     className="p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
                   >
                     {item}
@@ -263,8 +263,8 @@ function PureFormattedMessage({ content }: FormattedMessageProps) {
   if (contentType === 'facilities' && sections.length > 0) {
     return (
       <div className="space-y-4">
-        {sections.map((section, index) => (
-          <Card key={index}>
+        {sections.map((section) => (
+          <Card key={section.title}>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 {section.title}
@@ -277,9 +277,9 @@ function PureFormattedMessage({ content }: FormattedMessageProps) {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {section.items.map((item, itemIndex) => (
-                  <div key={itemIndex} className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-primary" />
+                {section.items.map((item) => (
+                  <div key={item} className="flex items-center gap-2">
+                    <div className="size-2 rounded-full bg-primary" />
                     <span className="text-sm">{item}</span>
                   </div>
                 ))}
@@ -295,12 +295,12 @@ function PureFormattedMessage({ content }: FormattedMessageProps) {
   if (sections.length > 0) {
     return (
       <div className="space-y-4">
-        {sections.map((section, index) => (
-          <div key={index}>
+        {sections.map((section) => (
+          <div key={section.title}>
             <h3 className="font-semibold text-lg mb-2">{section.title}</h3>
             <ul className="space-y-1 ml-4">
-              {section.items.map((item, itemIndex) => (
-                <li key={itemIndex} className="list-disc">
+              {section.items.map((item) => (
+                <li key={item} className="list-disc">
                   {item}
                 </li>
               ))}
@@ -316,7 +316,7 @@ function PureFormattedMessage({ content }: FormattedMessageProps) {
     <div className="prose dark:prose-invert max-w-none">
       {content.split('\n').map((line, index) => (
         <p
-          key={index}
+          key={`${line}-${index}`}
           className={cn('mb-2', {
             'font-semibold text-lg': line.startsWith('##'),
             'font-medium': line.startsWith('###'),

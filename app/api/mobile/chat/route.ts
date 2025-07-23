@@ -7,12 +7,12 @@ import {
   getUser,
   createUser,
 } from '@/lib/db/queries';
-import { type GlobalContext } from '@/lib/db/schema';
+import type { GlobalContext } from '@/lib/db/schema';
 import { generateUUID } from '@/lib/utils';
 import { generateText } from 'ai';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createHash } from 'crypto';
+import { createHash } from 'node:crypto';
 
 export const maxDuration = 60;
 
@@ -726,7 +726,7 @@ const INTENT_CORRECTION_MAP = {
 
 export async function POST(request: Request) {
   console.log('[POST /api/mobile/chat] Received request');
-  let requestBody;
+  let requestBody: typeof postRequestBodySchema._type;
 
   try {
     const json = await request.json();
@@ -1008,7 +1008,7 @@ export async function POST(request: Request) {
     );
 
     // Parse the response if it's JSON format
-    let parsedResponse;
+    let parsedResponse: any;
     let isJsonResponse = false;
     
     if (detectedResponseType && detectedResponseType !== 'text') {

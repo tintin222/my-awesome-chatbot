@@ -22,6 +22,7 @@ import {
   deleteMultimediaAttachment,
   getFullEnhancedContentData,
   getAllGlobalContext,
+  getUniqueCategories,
 } from '../../lib/db/queries';
 import type { VisibilityType } from '../../components/visibility-selector';
 import { myProvider } from '../../lib/ai/providers';
@@ -113,10 +114,15 @@ export async function createGlobalContext({
 }) {
   try {
     const newId = cuid();
-    await db
-      .insert(globalContext)
-      .values({ id: newId, category, content, isActive, associatedHotels });
-    // Consider revalidating cache/path if using a dedicated management page
+    // Yeni context'i ekle ve döndür
+    const created = await import('../../lib/db/queries').then(m => m.createGlobalContext({
+      id: newId,
+      category,
+      content,
+      isActive,
+      associatedHotels,
+    }));
+    return created;
   } catch (error) {
     console.error('Failed to create global context item');
     throw error;
@@ -180,6 +186,43 @@ export async function deleteGlobalContext({ id }: { id: string }) {
     // Consider revalidating cache/path
   } catch (error) {
     console.error('Failed to delete global context item');
+    throw error;
+  }
+}
+
+// ---- PDF Processing Action ----
+
+export async function createGlobalContextFromPDF({
+  filename,
+  extractedText,
+  category,
+  associatedHotels,
+  isActive = true,
+}: {
+  filename: string;
+  extractedText: string;
+  category: string;
+  associatedHotels: string[];
+  isActive?: boolean;
+}) {
+  try {
+    // Add a note about the source in the content
+    const contentWithSource = `Content extracted from PDF: "${filename}"\n\n${extractedText}`;
+    
+    const newId = cuid();
+    await db
+      .insert(globalContext)
+      .values({ 
+        id: newId, 
+        category, 
+        content: contentWithSource, 
+        isActive, 
+        associatedHotels 
+      });
+    
+    return { success: true, id: newId };
+  } catch (error) {
+    console.error('Failed to create global context from PDF');
     throw error;
   }
 }
@@ -672,6 +715,17 @@ export async function getAvailableContextForEnhancement() {
     return availableContext;
   } catch (error) {
     console.error('Failed to get available context for enhancement');
+    throw error;
+  }
+}
+
+export async function getUniqueCategoriesAction() {
+  'use server';
+  
+  try {
+    return await getUniqueCategories();
+  } catch (error) {
+    console.error('Failed to get unique categories:', error);
     throw error;
   }
 }

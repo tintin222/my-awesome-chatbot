@@ -31,10 +31,7 @@ import {
   contentEntity,
   entityEnhancement,
   multimediaAttachment,
-  type EnhancedContent,
   type ContentEntity,
-  type EntityEnhancement,
-  type MultimediaAttachment,
 } from './schema';
 import type { ArtifactKind } from '@/components/artifact';
 import { generateUUID } from '../utils';
@@ -617,6 +614,21 @@ export async function toggleGlobalContextActive({
     return updated;
   } catch (error) {
     console.error('Failed to toggle global context active state in database');
+    throw error;
+  }
+}
+
+// New function to get unique categories from database
+export async function getUniqueCategories() {
+  try {
+    const result = await db
+      .selectDistinct({ category: globalContext.category })
+      .from(globalContext)
+      .orderBy(asc(globalContext.category));
+    
+    return result.map(item => item.category);
+  } catch (error) {
+    console.error('Failed to get unique categories from database');
     throw error;
   }
 }

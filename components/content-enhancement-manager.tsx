@@ -33,7 +33,6 @@ import {
   AlertCircle,
   Plus,
   Eye,
-  Edit,
   Trash2,
   Sparkles,
   Upload,
@@ -48,11 +47,8 @@ import {
   getEnhancedContentList,
   getEnhancedContentWithEntities,
   addEntityEnhancement,
-  updateEntityAction,
-  addMultimediaToEntity,
   deleteEntityEnhancementAction,
   deleteMultimediaAttachmentAction,
-  updateEnhancedContentStatus,
 } from '@/app/(chat)/actions';
 
 // Types
@@ -268,15 +264,15 @@ export function ContentEnhancementManager() {
   const getMediaIcon = (type: string) => {
     switch (type) {
       case 'image':
-        return <Image className="h-4 w-4" />;
+        return <Image className="size-4" />;
       case 'video':
-        return <Video className="h-4 w-4" />;
+        return <Video className="size-4" />;
       case 'audio':
-        return <Music className="h-4 w-4" />;
+        return <Music className="size-4" />;
       case 'document':
-        return <FileText className="h-4 w-4" />;
+        return <FileText className="size-4" />;
       default:
-        return <FileText className="h-4 w-4" />;
+        return <FileText className="size-4" />;
     }
   };
 
@@ -343,7 +339,7 @@ export function ContentEnhancementManager() {
                           disabled={isLoading}
                           className="ml-4"
                         >
-                          <Sparkles className="h-4 w-4 mr-2" />
+                          <Sparkles className="size-4 mr-2" />
                           Analyze
                         </Button>
                       </div>
@@ -352,7 +348,7 @@ export function ContentEnhancementManager() {
                 ))}
                 {availableContext.length === 0 && !isLoading && (
                   <div className="text-center py-8 text-gray-500">
-                    <AlertCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <AlertCircle className="size-12 mx-auto mb-4 opacity-50" />
                     <p>No content available for enhancement.</p>
                     <p className="text-sm">
                       All available content has been processed.
@@ -415,7 +411,7 @@ export function ContentEnhancementManager() {
                               handleViewContent(content.id);
                             }}
                           >
-                            <Eye className="h-4 w-4 mr-2" />
+                            <Eye className="size-4 mr-2" />
                             {loadingContentId === content.id
                               ? 'Loading...'
                               : 'View'}
@@ -427,7 +423,7 @@ export function ContentEnhancementManager() {
                 ))}
                 {enhancedContentList.length === 0 && !isLoading && (
                   <div className="text-center py-8 text-gray-500">
-                    <AlertCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <AlertCircle className="size-12 mx-auto mb-4 opacity-50" />
                     <p>No enhanced content available.</p>
                     <p className="text-sm">
                       Start by analyzing content from the Available Content tab.
@@ -525,7 +521,7 @@ export function ContentEnhancementManager() {
             <Card>
               <CardContent className="pt-6">
                 <div className="text-center py-8 text-gray-500">
-                  <Eye className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                                      <Eye className="size-12 mx-auto mb-4 opacity-50" />
                   <p>Select enhanced content to view details and entities.</p>
                 </div>
               </CardContent>
@@ -636,7 +632,7 @@ export function ContentEnhancementManager() {
                                 })
                               }
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Trash2 className="size-4" />
                             </Button>
                           </div>
                         </div>
@@ -703,7 +699,7 @@ export function ContentEnhancementManager() {
                   </div>
 
                   <Button onClick={handleAddEnhancement} className="w-full">
-                    <Plus className="h-4 w-4 mr-2" />
+                    <Plus className="size-4 mr-2" />
                     Add Enhancement
                   </Button>
                 </CardContent>
@@ -750,14 +746,14 @@ export function ContentEnhancementManager() {
                               })
                             }
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="size-4" />
                           </Button>
                         </div>
                       ))}
                     </div>
                   ) : (
                     <div className="text-center py-4 text-gray-500">
-                      <Upload className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <Upload className="size-8 mx-auto mb-2 opacity-50" />
                       <p className="text-sm">No multimedia attachments yet</p>
                     </div>
                   )}
@@ -765,7 +761,7 @@ export function ContentEnhancementManager() {
                   <Separator className="my-4" />
 
                   <Button variant="outline" className="w-full">
-                    <Upload className="h-4 w-4 mr-2" />
+                    <Upload className="size-4 mr-2" />
                     Add Multimedia
                   </Button>
                 </CardContent>

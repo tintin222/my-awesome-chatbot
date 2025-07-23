@@ -1,9 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import type { GlobalContext } from '@/lib/db/schema'; // Use 'import type'
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { PlusIcon, PenIcon, TrashIcon, SparklesIcon } from './icons'; // Changed EditIcon to PenIcon
+import { PlusIcon, PenIcon, TrashIcon, SparklesIcon, LoaderIcon } from './icons'; // Changed EditIcon to PenIcon
 import {
   Dialog,
   DialogContent,
@@ -22,6 +21,8 @@ import {
   deleteGlobalContext,
   toggleGlobalContextActive,
   refactorGlobalContext,
+  createGlobalContextFromPDF,
+  getUniqueCategoriesAction,
 } from '@/app/(chat)/actions'; // Import server actions
 import { toast } from './toast';
 import {
@@ -51,10 +52,20 @@ import {
   TooltipTrigger,
   TooltipProvider,
 } from '@/components/ui/tooltip';
-import { LoaderIcon } from './icons'; // Import a loader icon
+import { PDFUpload } from './pdf-upload';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import useSWR from 'swr';
+import type { GlobalContext } from '@/lib/db/schema';
+// import { getAllGlobalContext } from '@/lib/db/queries'; // Kaldırıldı
 
-// Define categories
-const CONTEXT_CATEGORIES = [
+const fetcher = async (): Promise<GlobalContext[]> => {
+  const res = await fetch('/api/global-context');
+  if (!res.ok) throw new Error('Failed to fetch context');
+  return res.json();
+};
+
+// Define default categories (fallback)
+const DEFAULT_CATEGORIES = [
   'Restaurant Information/Menu',
   'Events Information',
   'Shuttle services',
@@ -72,8 +83,10 @@ interface ContextManagerProps {
 }
 
 export function ContextManager({ initialItems }: ContextManagerProps) {
-  // State for the list of items (might use SWR later for auto-updates)
-  const [items, setItems] = useState<GlobalContext[]>(initialItems);
+  // SWR ile context listesini fetch et
+  const { data: items = [], mutate } = useSWR<GlobalContext[]>('/api/global-context', fetcher, {
+    fallbackData: initialItems,
+  });
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   // Add states for edit/delete dialogs
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -98,6 +111,58 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
     string[]
   >([]); // State for edit dialog hotels
 
+  // New state for dynamic categories
+  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(true);
+  const [customCategory, setCustomCategory] = useState('');
+
+  // Yeni state: PDF preview/edit
+  const [pdfPreview, setPdfPreview] = useState<{
+    filename: string;
+    extractedText: string;
+    category: string;
+    associatedHotels: string[];
+  } | null>(null);
+  const [pdfPreviewContent, setPdfPreviewContent] = useState('');
+  const [isPdfDialogOpen, setIsPdfDialogOpen] = useState(false);
+
+  // Load categories on component mount
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        setIsLoadingCategories(true);
+        const uniqueCategories = await getUniqueCategoriesAction();
+        // Combine default categories with database categories, removing duplicates
+        const allCategories = [...new Set([...DEFAULT_CATEGORIES, ...uniqueCategories])];
+        setCategories(allCategories.sort());
+      } catch (error) {
+        console.error('Failed to load categories:', error);
+        // Fallback to default categories
+        setCategories(DEFAULT_CATEGORIES);
+      } finally {
+        setIsLoadingCategories(false);
+      }
+    };
+
+    loadCategories();
+  }, []);
+
+  // Handler for adding custom category
+  const handleAddCustomCategory = () => {
+    if (customCategory.trim() && !categories.includes(customCategory.trim())) {
+      setCategories(prev => [...prev, customCategory.trim()].sort());
+      
+      // Set the category based on which dialog is open
+      if (isAddDialogOpen) {
+        setNewCategory(customCategory.trim());
+      } else if (isEditDialogOpen) {
+        setEditCategory(customCategory.trim());
+      }
+      
+      setCustomCategory('');
+    }
+  };
+
   // Handler for saving new context
   const handleAddNewContext = async () => {
     if (!newCategory || !newContent || associatedHotels.length === 0) {
@@ -120,9 +185,10 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
       setNewCategory('');
       setNewContent('');
       setNewIsActive(true);
-      setAssociatedHotels(['all']); // Reset to default
+      setAssociatedHotels(['all']);
       setIsAddDialogOpen(false);
-      router.refresh();
+      // SWR ile veriyi yeniden fetch et
+      mutate();
     } catch (error) {
       toast({ type: 'error', description: 'Failed to add context.' });
     } finally {
@@ -165,7 +231,7 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
       toast({ type: 'success', description: 'Context updated.' });
       setIsEditDialogOpen(false);
       setEditingItem(null); // Clear editing state
-      router.refresh();
+      mutate();
     } catch (error) {
       console.error('Failed to update context:', error);
       setEditError('Failed to save changes. Please try again.');
@@ -183,22 +249,14 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
 
   // Handler for toggling active state
   const handleToggleActive = async (item: GlobalContext) => {
-    const originalItems = [...items];
-    setItems((currentItems) =>
-      currentItems.map((i) =>
-        i.id === item.id ? { ...i, isActive: !i.isActive } : i,
-      ),
-    );
-
     try {
       await toggleGlobalContextActive({
         id: item.id,
         isActive: !item.isActive,
       });
-      router.refresh();
+      mutate();
     } catch (error) {
       toast({ type: 'error', description: 'Failed to update status.' });
-      setItems(originalItems);
     }
   };
 
@@ -210,7 +268,7 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
       await deleteGlobalContext({ id: deletingItem.id });
       toast({ type: 'success', description: 'Context deleted.' });
       setDeletingItem(null);
-      router.refresh(); // Refresh data on success
+      mutate();
     } catch (error) {
       toast({ type: 'error', description: 'Failed to delete context.' });
     } finally {
@@ -233,7 +291,7 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
           type: 'success',
           description: 'Context refactored successfully.',
         });
-        router.refresh(); // Refresh to show updated content
+        mutate(); // router.refresh() yerine mutate()
       } else {
         throw new Error(result.error || 'Failed to refactor context.');
       }
@@ -255,6 +313,51 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
     );
   };
 
+  // Handler for PDF upload success
+  const handlePDFUploadSuccess = async (data: {
+    filename: string;
+    extractedText: string;
+    category: string;
+    associatedHotels: string[];
+  }) => {
+    setPdfPreview({
+      filename: data.filename,
+      extractedText: data.extractedText,
+      category: data.category,
+      associatedHotels: data.associatedHotels,
+    });
+    setPdfPreviewContent(data.extractedText);
+    setIsPdfDialogOpen(true);
+    setIsAddDialogOpen(false);
+  };
+
+  // PDF preview dialogunda onayla/ekle
+  const handleConfirmPDFContext = async () => {
+    if (!pdfPreview) return;
+    try {
+      await createGlobalContextFromPDF({
+        filename: pdfPreview.filename,
+        extractedText: pdfPreviewContent,
+        category: pdfPreview.category,
+        associatedHotels: pdfPreview.associatedHotels,
+        isActive: true,
+      });
+      toast({
+        type: 'success',
+        description: `PDF content from "${pdfPreview.filename}" added successfully!`,
+      });
+      setIsPdfDialogOpen(false);
+      setPdfPreview(null);
+      setPdfPreviewContent('');
+      mutate(); // router.refresh() yerine mutate()
+    } catch (error) {
+      toast({
+        type: 'error',
+        description: 'Failed to save PDF content to context.',
+      });
+    }
+  };
+
   return (
     <TooltipProvider>
       <div className="space-y-4">
@@ -266,31 +369,68 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
                 <PlusIcon size={16} /> Add New Context
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-2xl">
               <DialogHeader>
                 <DialogTitle>Add New Global Context</DialogTitle>
                 <DialogDescription>
-                  Enter a category and content for this new context item.
+                  Add context manually or upload a PDF to extract content automatically.
                 </DialogDescription>
               </DialogHeader>
-              {/* Add form */}
-              <div className="grid gap-4 py-4">
+              
+              <Tabs defaultValue="manual" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="manual">Manual Entry</TabsTrigger>
+                  <TabsTrigger value="pdf">PDF Upload</TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="manual" className="space-y-4">
+                  {/* Manual form */}
+                  <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="new-category" className="text-right">
                     Category
                   </Label>
-                  <Select value={newCategory} onValueChange={setNewCategory}>
-                    <SelectTrigger className="col-span-3">
-                      <SelectValue placeholder="Select a category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CONTEXT_CATEGORIES.map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {cat}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="col-span-3 space-y-2">
+                    <Select value={newCategory} onValueChange={setNewCategory}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={isLoadingCategories ? "Loading categories..." : "Select a category"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {isLoadingCategories ? (
+                          <SelectItem value="" disabled>
+                            Loading categories...
+                          </SelectItem>
+                        ) : (
+                          categories.map((cat) => (
+                            <SelectItem key={cat} value={cat}>
+                              {cat}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Add new category"
+                        value={customCategory}
+                        onChange={(e) => setCustomCategory(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleAddCustomCategory();
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAddCustomCategory}
+                        disabled={!customCategory.trim()}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                  </div>
                 </div>
                 <div className="grid grid-cols-4 items-start gap-4">
                   <Label htmlFor="new-content" className="text-right pt-2">
@@ -360,7 +500,104 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
                   {isSaving ? 'Saving...' : 'Save Context'}
                 </Button>
               </DialogFooter>
-            </DialogContent>
+            </TabsContent>
+            
+            <TabsContent value="pdf" className="space-y-4">
+              <div className="space-y-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="pdf-category" className="text-right">
+                    Category
+                  </Label>
+                  <div className="col-span-3 space-y-2">
+                    <Select value={newCategory} onValueChange={setNewCategory}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={isLoadingCategories ? "Loading categories..." : "Select a category"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {isLoadingCategories ? (
+                          <SelectItem value="" disabled>
+                            Loading categories...
+                          </SelectItem>
+                        ) : (
+                          categories.map((cat) => (
+                            <SelectItem key={cat} value={cat}>
+                              {cat}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Add new category"
+                        value={customCategory}
+                        onChange={(e) => setCustomCategory(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleAddCustomCategory();
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAddCustomCategory}
+                        disabled={!customCategory.trim()}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>Associated Hotels</Label>
+                  <div className="flex flex-wrap gap-4">
+                    {HOTEL_OPTIONS.map((hotel) => (
+                      <div key={hotel} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`pdf-${hotel}`}
+                          checked={associatedHotels.includes(hotel)}
+                          onCheckedChange={(checked) =>
+                            handleHotelChange(hotel, Boolean(checked))
+                          }
+                        />
+                        <Label htmlFor={`pdf-${hotel}`} className="capitalize">
+                          {hotel}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                  {associatedHotels.length === 0 && (
+                    <p className="text-sm text-destructive">
+                      Please select at least one hotel association.
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Upload PDF</Label>
+                  <PDFUpload
+                    onUploadSuccess={handlePDFUploadSuccess}
+                    category={newCategory}
+                    associatedHotels={associatedHotels}
+                    disabled={!newCategory || associatedHotels.length === 0}
+                  />
+                </div>
+              </div>
+              
+              <DialogFooter>
+                <Button
+                  variant="secondary"
+                  onClick={() => setIsAddDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+              </DialogFooter>
+            </TabsContent>
+          </Tabs>
+        </DialogContent>
           </Dialog>
         </div>
 
@@ -421,7 +658,7 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
                           size="icon"
                           onClick={() => handleRefactorContext(item)}
                           disabled={isRefactoringId === item.id}
-                          className="h-8 w-8"
+                          className="size-8"
                         >
                           {isRefactoringId === item.id ? (
                             <LoaderIcon />
@@ -436,7 +673,7 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
                       variant="outline"
                       size="icon"
                       onClick={() => handleEditClick(item)}
-                      className="h-8 w-8"
+                      className="size-8"
                     >
                       <PenIcon size={14} />
                     </Button>
@@ -446,7 +683,7 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
                           variant="destructive"
                           size="icon"
                           onClick={() => setDeletingItem(item)}
-                          className="h-8 w-8"
+                          className="size-8"
                         >
                           <TrashIcon size={14} />
                         </Button>
@@ -499,18 +736,47 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
                   <Label htmlFor="edit-category" className="text-right">
                     Category
                   </Label>
-                  <Select value={editCategory} onValueChange={setEditCategory}>
-                    <SelectTrigger className="col-span-3">
-                      <SelectValue placeholder="Select a category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CONTEXT_CATEGORIES.map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {cat}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="col-span-3 space-y-2">
+                    <Select value={editCategory} onValueChange={setEditCategory}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={isLoadingCategories ? "Loading categories..." : "Select a category"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {isLoadingCategories ? (
+                          <SelectItem value="" disabled>
+                            Loading categories...
+                          </SelectItem>
+                        ) : (
+                          categories.map((cat) => (
+                            <SelectItem key={cat} value={cat}>
+                              {cat}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Add new category"
+                        value={customCategory}
+                        onChange={(e) => setCustomCategory(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleAddCustomCategory();
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAddCustomCategory}
+                        disabled={!customCategory.trim()}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                  </div>
                 </div>
                 <div className="grid grid-cols-4 items-start gap-4">
                   <Label htmlFor="edit-content" className="text-right pt-2">
@@ -590,6 +856,50 @@ export function ContextManager({ initialItems }: ContextManagerProps) {
           </Dialog>
         )}
       </div>
+      {isPdfDialogOpen && pdfPreview && (
+        <Dialog open={isPdfDialogOpen} onOpenChange={setIsPdfDialogOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Review and Edit Extracted PDF Content</DialogTitle>
+              <DialogDescription>
+                AI tarafından çıkarılan metni gözden geçirin, gerekirse düzenleyin ve onaylayın. Onayladığınızda context&apos;e eklenecek.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label className="text-right">Category</Label>
+                <div className="col-span-3">{pdfPreview.category}</div>
+              </div>
+              <div className="grid grid-cols-4 items-start gap-4">
+                <Label className="text-right pt-2">Content</Label>
+                <Textarea
+                  value={pdfPreviewContent}
+                  onChange={e => setPdfPreviewContent(e.target.value)}
+                  className="col-span-3 h-40 resize-none"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Associated Hotels</Label>
+                <div className="flex flex-wrap gap-4">
+                  {pdfPreview.associatedHotels.map(hotel => (
+                    <span key={hotel} className="px-2 py-1 bg-muted rounded text-xs capitalize">
+                      {hotel}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsPdfDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleConfirmPDFContext}>
+                Onayla ve Ekle
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </TooltipProvider>
   );
 }

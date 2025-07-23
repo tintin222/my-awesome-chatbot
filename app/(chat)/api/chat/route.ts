@@ -6,11 +6,8 @@ import {
   streamText,
 } from 'ai';
 import { auth, type UserType } from '@/app/(auth)/auth';
-import {
-  type RequestHints,
-  systemPrompt,
-  regularPrompt,
-  artifactsPrompt,
+import type {
+  RequestHints,
 } from '@/lib/ai/prompts';
 import {
   deleteChatById,
@@ -19,22 +16,17 @@ import {
   getMessagesByChatId,
   saveChat,
   saveMessages,
-  getAllGlobalContext,
   getAllActiveGlobalContext,
 } from '@/lib/db/queries';
 import { generateUUID, getTrailingMessageId } from '@/lib/utils';
 import { generateTitleFromUserMessage } from '../../actions';
-import { createDocument } from '@/lib/ai/tools/create-document';
-import { updateDocument } from '@/lib/ai/tools/update-document';
-import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
-import { getWeather } from '@/lib/ai/tools/get-weather';
+import { analyzeContextRelevance } from '@/lib/ai/tools/analyze-context';
 import { isProductionEnvironment } from '@/lib/constants';
 import { myProvider } from '@/lib/ai/providers';
 import { entitlementsByUserType } from '@/lib/ai/entitlements';
 import { postRequestBodySchema, type PostRequestBody } from './schema';
 import { geolocation } from '@vercel/functions';
-import { eq, and } from 'drizzle-orm';
-import { globalContext, chat, type GlobalContext } from '@/lib/db/schema';
+import type { GlobalContext } from '@/lib/db/schema';
 
 // Define the core persona and restrictions (Corrected Syntax)
 const PERSONA_PROMPT = `You are a helpful and polite hotel assistant representing Gloria Hotels & Resorts. Your primary goal is to answer guest questions accurately using *only* the information provided in the context below.
@@ -190,61 +182,56 @@ export async function POST(request: Request) {
       console.log('[POST /api/chat] Fetched chat-specific behavior prompt.');
     }
 
-    // 2. Fetch All Active Global Context Items (including associatedHotels)
+    // 2. Fetch All Active Global Context Items
     const allActiveContextItems = await getAllActiveGlobalContext();
     console.log(
       `[POST /api/chat] Fetched ${allActiveContextItems.length} active global context items.`,
     );
 
-    // 3. Keyword Detection for Target Hotel
-    let targetHotel: string | null = null;
+    // 3. AI-Powered Context Analysis
     const lastUserMessage = messages[messages.length - 1]?.content;
+    let relevantCategories: string[] = [];
+    let contextAnalysisReasoning = '';
+    
     if (typeof lastUserMessage === 'string') {
-      const lowerCaseMessage = lastUserMessage.toLowerCase();
-      if (lowerCaseMessage.includes('serenity')) {
-        targetHotel = 'serenity';
-      } else if (lowerCaseMessage.includes('golf')) {
-        targetHotel = 'golf';
-      } else if (lowerCaseMessage.includes('verde')) {
-        targetHotel = 'verde';
-      }
-      if (targetHotel) {
-        console.log(`[POST /api/chat] Detected target hotel: ${targetHotel}`);
+      console.log('[POST /api/chat] Analyzing user message for relevant context...');
+      
+      try {
+        const analysisResult = await analyzeContextRelevance(lastUserMessage);
+        relevantCategories = analysisResult.relevantCategories;
+        contextAnalysisReasoning = analysisResult.reasoning;
+        
+        console.log(`[POST /api/chat] AI analysis found relevant categories: ${relevantCategories.join(', ')}`);
+        console.log(`[POST /api/chat] Analysis reasoning: ${contextAnalysisReasoning}`);
+      } catch (error) {
+        console.error('[POST /api/chat] Context analysis failed:', error);
+        // Fallback to general context
+        relevantCategories = ['General Catalog', 'FaQ'];
       }
     }
 
-    // 4. Filter Context Items - Prioritize target hotel if detected
+    // 4. Filter Context Items Based on AI Analysis
     let filteredContextItems: GlobalContext[] = [];
-    if (targetHotel) {
-      // If a hotel is detected, ONLY get context specifically for that hotel
-      console.log(
-        `[POST /api/chat] Filtering for context specific to: ${targetHotel}`,
-      );
+    
+    if (relevantCategories.length > 0) {
+      // Filter context items by relevant categories
       filteredContextItems = allActiveContextItems.filter((item) =>
-        item.associatedHotels?.includes(targetHotel),
+        relevantCategories.includes(item.category)
       );
-      // Optional: Add back 'all' context if NO specific context was found?
-      // if (filteredContextItems.length === 0) {
-      //    console.log(`[API Chat] No specific context for ${targetHotel}, falling back to 'all'.`);
-      //    filteredContextItems = allActiveContextItems.filter(item => item.associatedHotels?.includes('all'));
-      // }
+      
+      console.log(
+        `[POST /api/chat] Filtered to ${filteredContextItems.length} context items based on AI analysis.`,
+      );
     } else {
-      // If no hotel detected, get only the 'all' context
+      // If no specific categories found, use all context
+      filteredContextItems = allActiveContextItems;
       console.log(
-        "[POST /api/chat] No target hotel detected, filtering for 'all' context.",
-      );
-      filteredContextItems = allActiveContextItems.filter((item) =>
-        item.associatedHotels?.includes('all'),
+        '[POST /api/chat] No specific categories found, using all context items.',
       );
     }
 
-    console.log(
-      `[POST /api/chat] Filtered down to ${filteredContextItems.length} relevant context items.`,
-    );
-
-    // 5. Format Context String (Group by category, add hotel specifier)
+    // 5. Format Context String (Group by category)
     let formattedContext = '';
-    // No longer need separate general/specific grouping, format all filtered items
     const groupedContext: Record<string, string[]> = {};
 
     filteredContextItems.forEach((item) => {
@@ -254,14 +241,12 @@ export async function POST(request: Request) {
       groupedContext[item.category].push(item.content);
     });
 
-    // Add appropriate header based on whether a target hotel was used for filtering
-    if (targetHotel && Object.keys(groupedContext).length > 0) {
-      const hotelName =
-        targetHotel.charAt(0).toUpperCase() + targetHotel.slice(1);
-      formattedContext += `Context Specifically for Gloria ${hotelName}:\n`;
-    } else if (Object.keys(groupedContext).length > 0) {
-      // Only add general header if no specific hotel context was targeted
-      formattedContext += `General Context (Applies to All Hotels):\n`;
+    // Add header with analysis info
+    if (Object.keys(groupedContext).length > 0) {
+      if (contextAnalysisReasoning) {
+        formattedContext += `Context Analysis: ${contextAnalysisReasoning}\n\n`;
+      }
+      formattedContext += `Relevant Context Information:\n`;
     }
 
     // Append the grouped content

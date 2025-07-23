@@ -141,7 +141,7 @@ function PureSuggestionsPanel({ chatId, append }: SuggestionsPanelProps) {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 20 }}
-              className="fixed right-0 top-0 h-full w-full sm:w-[480px] bg-background border-l shadow-xl z-50 overflow-hidden flex flex-col"
+              className="fixed right-0 top-0 h-full size-full sm:w-[480px] bg-background border-l shadow-xl z-50 overflow-hidden flex flex-col"
             >
               {/* Header */}
               <div className="flex items-center justify-between p-6 border-b">

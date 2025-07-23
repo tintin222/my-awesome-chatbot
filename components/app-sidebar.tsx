@@ -3,7 +3,7 @@
 import type { User } from 'next-auth';
 import { useRouter } from 'next/navigation';
 
-import { PlusIcon } from '@/components/icons';
+import { PlusIcon, RouteIcon } from '@/components/icons';
 import { SidebarHistory } from '@/components/sidebar-history';
 import { SidebarUserNav } from '@/components/sidebar-user-nav';
 import { Button } from '@/components/ui/button';
@@ -54,6 +54,22 @@ export function AppSidebar({ user }: { user: User | undefined }) {
                 </Button>
               </TooltipTrigger>
               <TooltipContent align="end">New Chat</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  className="p-2 h-fit"
+                  onClick={() => {
+                    setOpenMobile(false);
+                    router.push('/manage-context');
+                  }}
+                >
+                  <RouteIcon />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent align="end">Manage Context</TooltipContent>
             </Tooltip>
           </div>
         </SidebarMenu>
